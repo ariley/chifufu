@@ -3,12 +3,14 @@ import {
   Alert,
   Linking,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   useColorScheme,
   View,
 } from 'react-native';
+import MapView, { Marker } from 'react-native-maps';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
@@ -72,7 +74,35 @@ export default function DetailScreen() {
         <View style={styles.navSpacer} />
       </View>
 
-      <View style={styles.body}>
+      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
+        {/* Inline map — only shown when coordinates are available */}
+        {item.lat != null && item.lng != null && (
+          <TouchableOpacity onPress={handleCTA} activeOpacity={0.9} accessibilityLabel="Open directions">
+            <MapView
+              style={styles.miniMap}
+              initialRegion={{
+                latitude: item.lat,
+                longitude: item.lng,
+                latitudeDelta: 0.01,
+                longitudeDelta: 0.01,
+              }}
+              scrollEnabled={false}
+              zoomEnabled={false}
+              pitchEnabled={false}
+              rotateEnabled={false}
+              pointerEvents="none"
+            >
+              <Marker
+                coordinate={{ latitude: item.lat, longitude: item.lng }}
+                pinColor={GREEN}
+              />
+            </MapView>
+            <View style={styles.miniMapOverlay}>
+              <Text style={styles.miniMapLabel}>{ctaIcon}  {ctaLabel}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
+
         <View style={[styles.headerCard, { backgroundColor: c.bgSec, borderColor: c.border }]}>
           <View style={styles.headerTop}>
             <Text style={[styles.name, { color: c.text }]}>{item.name}</Text>
@@ -97,7 +127,7 @@ export default function DetailScreen() {
           {item.address ? (
             <View style={[styles.infoRow, { borderBottomColor: c.border, borderBottomWidth: 0.5 }]}>
               <Text style={styles.infoEmoji}>📍</Text>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={[styles.infoLabel, { color: c.textTer }]}>Address</Text>
                 <Text style={[styles.infoValue, { color: c.text }]}>{item.address}</Text>
               </View>
@@ -120,7 +150,7 @@ export default function DetailScreen() {
             </View>
           </View>
         </View>
-      </View>
+      </ScrollView>
 
       <View style={[styles.ctaWrap, { backgroundColor: c.bg }]}>
         <TouchableOpacity style={styles.cta} onPress={handleCTA} accessibilityRole="button">
@@ -148,7 +178,22 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   navSpacer: { width: 24 },
-  body: { flex: 1, padding: 16, gap: 12 },
+  body: { flex: 1 },
+  bodyContent: { padding: 16, gap: 12, paddingBottom: 32 },
+  miniMap: { height: 180, borderRadius: 16, overflow: 'hidden', marginBottom: 0 },
+  miniMapOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderBottomLeftRadius: 16,
+    borderBottomRightRadius: 16,
+    alignItems: 'center',
+  },
+  miniMapLabel: { color: '#FFF', fontSize: 14, fontWeight: '500' },
   headerCard: {
     borderRadius: 16,
     padding: 20,

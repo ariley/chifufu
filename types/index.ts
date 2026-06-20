@@ -11,6 +11,8 @@ export interface ResultItem {
   badges: BadgeKey[];
   address?: string;
   platform?: string;
+  lat?: number;
+  lng?: number;
 }
 
 export type RootStackParamList = {

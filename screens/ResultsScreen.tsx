@@ -16,6 +16,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { BadgeKey, CategoryKey, ResultItem, RootStackParamList } from '../types';
 import { fetchCheapFoodOptions } from '../utils/anthropic';
+import ResultsMap from '../components/ResultsMap';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Results'>;
 type Route = RouteProp<RootStackParamList, 'Results'>;
@@ -193,7 +194,7 @@ export default function ResultsScreen() {
         </ScrollView>
       </View>
 
-      {/* Results list */}
+      {/* Results list or map */}
       {loading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator size="large" color={GREEN} />
@@ -201,6 +202,12 @@ export default function ResultsScreen() {
             Finding cheap options near you…
           </Text>
         </View>
+      ) : activeTab === 'map' ? (
+        <ResultsMap
+          results={results}
+          location={location}
+          onSelectItem={(item) => navigation.navigate('Detail', { item, location })}
+        />
       ) : (
         <FlatList
           data={results}
