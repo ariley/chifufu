@@ -56,6 +56,7 @@ async function geocode(address) {
   return {};
 }
 
+app.get('/', (_req, res) => res.json({ name: 'Cheap Eats API', status: 'ok', endpoints: ['POST /api/results', 'GET /health'] }));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 app.post('/api/results', async (req, res) => {
