@@ -15,6 +15,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { BadgeKey, RootStackParamList } from '../types';
+import { useSavedContext } from '../App';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Detail'>;
 type Route = RouteProp<RootStackParamList, 'Detail'>;
@@ -44,6 +45,7 @@ export default function DetailScreen() {
     border: dark ? '#38383A' : '#E5E5EA',
   };
 
+  const { isSaved, toggle } = useSavedContext();
   const isDelivery = !!item.platform;
   const ctaLabel = isDelivery ? `Open ${item.platform}` : 'Get directions';
   const ctaIcon = isDelivery ? '🔗' : '🗺️';
@@ -71,7 +73,15 @@ export default function DetailScreen() {
           <Text style={styles.backChevron}>‹</Text>
         </TouchableOpacity>
         <Text style={[styles.navTitle, { color: c.text }]}>Details</Text>
-        <View style={styles.navSpacer} />
+        <TouchableOpacity
+          onPress={() => toggle(item)}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel={isSaved(item.id) ? 'Unsave' : 'Save'}
+        >
+          <Text style={{ fontSize: 22, color: isSaved(item.id) ? '#FF3B30' : c.textTer }}>
+            {isSaved(item.id) ? '♥' : '♡'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>

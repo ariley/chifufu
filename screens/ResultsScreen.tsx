@@ -17,6 +17,8 @@ import { StatusBar } from 'expo-status-bar';
 import { BadgeKey, CategoryKey, ResultItem, RootStackParamList } from '../types';
 import { fetchCheapFoodOptions } from '../utils/anthropic';
 import ResultsMap from '../components/ResultsMap';
+import { useSavedContext } from '../App';
+import SavedScreen from './SavedScreen';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Results'>;
 type Route = RouteProp<RootStackParamList, 'Results'>;
@@ -65,6 +67,7 @@ export default function ResultsScreen() {
   const [results, setResults] = useState<ResultItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>('list');
+  const { isSaved, toggle } = useSavedContext();
 
   const c = {
     bg: dark ? '#000000' : '#FFFFFF',
@@ -121,7 +124,18 @@ export default function ResultsScreen() {
           <Text style={[styles.cardName, { color: c.text }]} numberOfLines={1}>
             {item.name}
           </Text>
-          <Text style={styles.cardPrice}>{item.price}</Text>
+          <View style={styles.cardRight}>
+            <Text style={styles.cardPrice}>{item.price}</Text>
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation(); toggle(item); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel={isSaved(item.id) ? 'Unsave' : 'Save'}
+            >
+              <Text style={[styles.heartIcon, { color: isSaved(item.id) ? '#FF3B30' : c.textTer }]}>
+                {isSaved(item.id) ? '♥' : '♡'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <Text style={[styles.cardSub, { color: c.textSec }]} numberOfLines={1}>
           {item.description}
@@ -206,6 +220,10 @@ export default function ResultsScreen() {
         <ResultsMap
           results={results}
           location={location}
+          onSelectItem={(item) => navigation.navigate('Detail', { item, location })}
+        />
+      ) : activeTab === 'saved' ? (
+        <SavedScreen
           onSelectItem={(item) => navigation.navigate('Detail', { item, location })}
         />
       ) : (
@@ -312,7 +330,9 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   cardName: { fontSize: 15, fontWeight: '500', flex: 1, marginRight: 6 },
+  cardRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardPrice: { fontSize: 16, fontWeight: '500', color: GREEN },
+  heartIcon: { fontSize: 18 },
   cardSub: { fontSize: 12, marginBottom: 6 },
   cardMeta: {
     flexDirection: 'row',
