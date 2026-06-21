@@ -16,13 +16,19 @@ const CATEGORY_PROMPTS = {
   'under10': 'cheapest food options under $10 total — include dine-in, delivery, and grocery',
 };
 
-function buildPrompt(location, category) {
-  const desc = CATEGORY_PROMPTS[category] ?? CATEGORY_PROMPTS['go-out'];
-  const priceFilter =
-    category === 'under5' ? ' Every result must be under $5.' :
-    category === 'under10' ? ' Every result must be under $10.' : '';
+function buildPrompt(location, category, query) {
+  let intro, priceFilter = '';
 
-  return `You are a local cheap food expert. Find the ${desc} near ${location}.${priceFilter}
+  if (query) {
+    intro = `Find the cheapest places to buy "${query}" near ${location}. Include grocery stores, supermarkets, specialty shops, and any other relevant stores. Focus on the lowest price per unit or per item.`;
+  } else {
+    const desc = CATEGORY_PROMPTS[category] ?? CATEGORY_PROMPTS['go-out'];
+    intro = `Find the ${desc} near ${location}.`;
+    priceFilter = category === 'under5' ? ' Every result must be under $5.' :
+                  category === 'under10' ? ' Every result must be under $10.' : '';
+  }
+
+  return `You are a local cheap food expert. ${intro}${priceFilter}
 
 Return a JSON array of 5–8 options sorted by priceValue ascending. Each object must have exactly these fields:
 {
@@ -60,7 +66,7 @@ app.get('/', (_req, res) => res.json({ name: 'Cheap Eats API', status: 'ok', end
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 app.post('/api/results', async (req, res) => {
-  const { location, category } = req.body ?? {};
+  const { location, category, searchQuery } = req.body ?? {};
   if (!location || !category) {
     return res.status(400).json({ error: 'location and category are required' });
   }
@@ -80,7 +86,7 @@ app.post('/api/results', async (req, res) => {
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 1024,
-        messages: [{ role: 'user', content: buildPrompt(location, category) }],
+        messages: [{ role: 'user', content: buildPrompt(location, category, searchQuery) }],
       }),
     });
   } catch (err) {

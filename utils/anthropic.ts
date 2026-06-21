@@ -6,11 +6,12 @@ const BASE_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000';
 export async function fetchCheapFoodOptions(
   location: string,
   category: CategoryKey,
+  searchQuery?: string,
 ): Promise<ResultItem[]> {
   const response = await fetch(`${BASE_URL}/api/results`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ location, category }),
+    body: JSON.stringify({ location, category, searchQuery }),
   });
 
   if (!response.ok) {

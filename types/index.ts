@@ -15,8 +15,13 @@ export interface ResultItem {
   lng?: number;
 }
 
+export interface BucketItem extends ResultItem {
+  quantity: number;
+}
+
 export type RootStackParamList = {
   Home: undefined;
-  Results: { category: CategoryKey; location: string };
+  Results: { category: CategoryKey; location: string; searchQuery?: string };
   Detail: { item: ResultItem; location: string };
+  Bucket: undefined;
 };

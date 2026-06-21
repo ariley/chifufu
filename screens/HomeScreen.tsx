@@ -6,6 +6,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   useColorScheme,
   View,
@@ -60,6 +61,7 @@ export default function HomeScreen() {
   const dark = scheme === 'dark';
   const [selected, setSelected] = useState<HomeCategory>('grocery');
   const [location, setLocation] = useState('Oakland, CA');
+  const [searchQuery, setSearchQuery] = useState('');
 
   const c = {
     bg: dark ? '#000000' : '#FFFFFF',
@@ -117,8 +119,31 @@ export default function HomeScreen() {
           <Text style={[styles.chevron, { color: c.textTer }]}>›</Text>
         </TouchableOpacity>
 
+        {/* Search bar */}
+        <View style={[styles.searchRow, { backgroundColor: c.bgSec, borderColor: c.border }]}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={[styles.searchInput, { color: c.text }]}
+            placeholder="Search for an item… e.g. avocados"
+            placeholderTextColor={c.textTer}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+            onSubmitEditing={() => {
+              if (searchQuery.trim()) {
+                navigation.navigate('Results', { category: selected, location, searchQuery: searchQuery.trim() });
+              }
+            }}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={{ color: c.textTer, fontSize: 16 }}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
         <Text style={[styles.sectionLabel, { color: c.textTer }]}>
-          HOW DO YOU WANT TO EAT?
+          {searchQuery.trim() ? 'OR BROWSE BY CATEGORY' : 'HOW DO YOU WANT TO EAT?'}
         </Text>
 
         <View style={styles.options}>
@@ -158,10 +183,16 @@ export default function HomeScreen() {
       <View style={[styles.ctaWrap, { backgroundColor: c.bg }]}>
         <TouchableOpacity
           style={styles.cta}
-          onPress={() => navigation.navigate('Results', { category: selected, location })}
+          onPress={() => navigation.navigate('Results', {
+            category: selected,
+            location,
+            searchQuery: searchQuery.trim() || undefined,
+          })}
           accessibilityRole="button"
         >
-          <Text style={styles.ctaText}>🔍  Find cheap food</Text>
+          <Text style={styles.ctaText}>
+            {searchQuery.trim() ? `🔍  Search "${searchQuery.trim()}"` : '🔍  Find cheap food'}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -185,6 +216,18 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   subhead: { fontSize: 14 },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 24,
+    marginBottom: 20,
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 0.5,
+    gap: 8,
+  },
+  searchIcon: { fontSize: 16 },
+  searchInput: { flex: 1, fontSize: 15 },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',

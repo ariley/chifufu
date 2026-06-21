@@ -17,7 +17,7 @@ import { StatusBar } from 'expo-status-bar';
 import { BadgeKey, CategoryKey, ResultItem, RootStackParamList } from '../types';
 import { fetchCheapFoodOptions } from '../utils/anthropic';
 import ResultsMap from '../components/ResultsMap';
-import { useSavedContext } from '../App';
+import { useSavedContext, useBucketContext } from '../App';
 import SavedScreen from './SavedScreen';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Results'>;
@@ -59,7 +59,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
 export default function ResultsScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
-  const { category: initialCategory, location } = route.params;
+  const { category: initialCategory, location, searchQuery } = route.params;
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
 
@@ -68,6 +68,7 @@ export default function ResultsScreen() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<Tab>('list');
   const { isSaved, toggle } = useSavedContext();
+  const { isInBucket, add: addToBucket, count: bucketCount } = useBucketContext();
 
   const c = {
     bg: dark ? '#000000' : '#FFFFFF',
@@ -83,7 +84,7 @@ export default function ResultsScreen() {
       setLoading(true);
       setResults([]);
       try {
-        const items = await fetchCheapFoodOptions(location, category);
+        const items = await fetchCheapFoodOptions(location, category, searchQuery);
         setResults(items);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Something went wrong';
@@ -135,6 +136,15 @@ export default function ResultsScreen() {
                 {isSaved(item.id) ? '♥' : '♡'}
               </Text>
             </TouchableOpacity>
+            <TouchableOpacity
+              onPress={(e) => { e.stopPropagation(); addToBucket(item); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel={isInBucket(item.id) ? 'In bucket' : 'Add to bucket'}
+            >
+              <Text style={[styles.heartIcon, { color: isInBucket(item.id) ? GREEN : c.textTer }]}>
+                🛒
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
         <Text style={[styles.cardSub, { color: c.textSec }]} numberOfLines={1}>
@@ -166,15 +176,24 @@ export default function ResultsScreen() {
           <Text style={styles.backChevron}>‹</Text>
         </TouchableOpacity>
         <View style={styles.navCenter}>
-          <Text style={[styles.navTitle, { color: c.text }]}>
-            {CATEGORY_LABELS[activeCategory]}
+          <Text style={[styles.navTitle, { color: c.text }]} numberOfLines={1}>
+            {searchQuery ? `"${searchQuery}"` : CATEGORY_LABELS[activeCategory]}
           </Text>
           <Text style={[styles.navSub, { color: c.textTer }]}>
             {location} · sorted by price
           </Text>
         </View>
-        <TouchableOpacity accessibilityLabel="Filters">
-          <Text style={[styles.filterIcon, { color: c.textSec }]}>⚙</Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Bucket')}
+          style={styles.bucketBtn}
+          accessibilityLabel={`Bucket — ${bucketCount} items`}
+        >
+          <Text style={styles.bucketIcon}>🛒</Text>
+          {bucketCount > 0 && (
+            <View style={styles.bucketBadge}>
+              <Text style={styles.bucketBadgeText}>{bucketCount > 9 ? '9+' : bucketCount}</Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -286,6 +305,16 @@ const styles = StyleSheet.create({
   navTitle: { fontSize: 16, fontWeight: '500' },
   navSub: { fontSize: 12 },
   filterIcon: { fontSize: 20 },
+  bucketBtn: { position: 'relative', padding: 2 },
+  bucketIcon: { fontSize: 20 },
+  bucketBadge: {
+    position: 'absolute', top: -4, right: -6,
+    backgroundColor: GREEN, borderRadius: 8,
+    minWidth: 16, height: 16,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  bucketBadgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
   chipRow: { paddingVertical: 12 },
   chipContent: { paddingHorizontal: 16, gap: 8 },
   chip: {
