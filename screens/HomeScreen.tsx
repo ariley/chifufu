@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Platform,
@@ -11,6 +11,7 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
@@ -60,8 +61,40 @@ export default function HomeScreen() {
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
   const [selected, setSelected] = useState<HomeCategory>('grocery');
-  const [location, setLocation] = useState('Oakland, CA');
+  const [location, setLocation] = useState('');
+  const [locating, setLocating] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    detectLocation();
+  }, []);
+
+  async function detectLocation() {
+    setLocating(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        setLocation('Oakland, CA');
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const [geo] = await Location.reverseGeocodeAsync({
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+      });
+      if (geo) {
+        const city = geo.city ?? geo.subregion ?? geo.region ?? '';
+        const state = geo.region ?? '';
+        setLocation(city && state ? `${city}, ${state}` : city || state || 'My Location');
+      } else {
+        setLocation('My Location');
+      }
+    } catch {
+      setLocation('Oakland, CA');
+    } finally {
+      setLocating(false);
+    }
+  }
 
   const c = {
     bg: dark ? '#000000' : '#FFFFFF',
@@ -111,12 +144,14 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={[styles.locationRow, { backgroundColor: c.bgSec, borderColor: c.border }]}
           onPress={handleLocationTap}
-          accessibilityLabel={`Current location: ${location}. Tap to change.`}
+          accessibilityLabel={locating ? 'Detecting location' : `Current location: ${location}. Tap to change.`}
         >
-          <Text style={styles.locationPin}>📍</Text>
+          <Text style={styles.locationPin}>{locating ? '⌖' : '📍'}</Text>
           <Text style={[styles.locationLabel, { color: c.textSec }]}>Near</Text>
-          <Text style={[styles.locationCity, { color: c.text }]}>{location}</Text>
-          <Text style={[styles.chevron, { color: c.textTer }]}>›</Text>
+          <Text style={[styles.locationCity, { color: locating ? c.textTer : c.text }]}>
+            {locating ? 'Detecting…' : location}
+          </Text>
+          {!locating && <Text style={[styles.chevron, { color: c.textTer }]}>›</Text>}
         </TouchableOpacity>
 
         {/* Search bar */}
@@ -182,7 +217,8 @@ export default function HomeScreen() {
 
       <View style={[styles.ctaWrap, { backgroundColor: c.bg }]}>
         <TouchableOpacity
-          style={styles.cta}
+          style={[styles.cta, locating && { opacity: 0.5 }]}
+          disabled={locating}
           onPress={() => navigation.navigate('Results', {
             category: selected,
             location,
