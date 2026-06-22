@@ -116,7 +116,10 @@ export default function DetailScreen() {
         <View style={[styles.headerCard, { backgroundColor: c.bgSec, borderColor: c.border }]}>
           <View style={styles.headerTop}>
             <Text style={[styles.name, { color: c.text }]}>{item.name}</Text>
-            <Text style={styles.price}>{item.price}</Text>
+            <View style={styles.priceWrap}>
+              <Text style={styles.price}>{item.price}</Text>
+              <Text style={[styles.priceNote, { color: c.textTer }]}>est.</Text>
+            </View>
           </View>
           <Text style={[styles.description, { color: c.textSec }]}>{item.description}</Text>
           {item.badges.length > 0 && (
@@ -216,7 +219,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   name: { fontSize: 20, fontWeight: '600', flex: 1, marginRight: 8 },
+  priceWrap: { alignItems: 'flex-end' },
   price: { fontSize: 22, fontWeight: '600', color: GREEN },
+  priceNote: { fontSize: 10, marginTop: 1 },
   description: { fontSize: 14, marginBottom: 12 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   badge: { borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },

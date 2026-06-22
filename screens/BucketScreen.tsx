@@ -1,9 +1,13 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
   Linking,
+  Modal,
+  Platform,
   SafeAreaView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -13,8 +17,9 @@ import {
 import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import { useBucketContext } from '../App';
+import { useBucketContext, useSavedRoutesContext } from '../App';
 import { BucketItem } from '../types';
+import { shareCart } from '../utils/anthropic';
 
 const GREEN = '#1D9E75';
 const GREEN_LIGHT = '#E1F5EE';
@@ -42,9 +47,12 @@ interface StoreGroup {
 
 export default function BucketScreen() {
   const navigation = useNavigation();
-  const { items, setQuantity, remove, clear, count } = useBucketContext();
+  const { items, setQuantity, remove, clear, replaceAll, count } = useBucketContext();
+  const { routes: savedRoutes, save: saveRoute, remove: removeSavedRoute } = useSavedRoutesContext();
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
+  const [sharing, setSharing] = useState(false);
+  const [showSaved, setShowSaved] = useState(false);
 
   const c = {
     bg: dark ? '#000000' : '#FFFFFF',
@@ -75,22 +83,23 @@ export default function BucketScreen() {
     const withAddress = stores.filter((s) => s.address);
 
     if (withAddress.length === 0 && withCoords.length === 0) {
-      Alert.alert('No locations', 'None of your bucket items have addresses for routing.');
+      Alert.alert('No locations', 'None of your route stops have addresses for navigation.');
       return;
     }
 
-    // Try to get user location to sort stores by distance
     let orderedStores = withAddress.length > 0 ? withAddress : withCoords;
+    let userLat: number | null = null;
+    let userLng: number | null = null;
 
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status === 'granted') {
       try {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        const { latitude, longitude } = pos.coords;
-        // Nearest-neighbor sort starting from user location
+        userLat = pos.coords.latitude;
+        userLng = pos.coords.longitude;
         const remaining = [...orderedStores.filter((s) => s.lat != null && s.lng != null)];
         const sorted: StoreGroup[] = [];
-        let curLat = latitude, curLng = longitude;
+        let curLat = userLat, curLng = userLng;
 
         while (remaining.length > 0) {
           let nearest = 0;
@@ -104,23 +113,70 @@ export default function BucketScreen() {
           curLng = sorted[sorted.length - 1].lng!;
         }
 
-        // Add any stores without coords at the end
         const noCoords = orderedStores.filter((s) => s.lat == null || s.lng == null);
         orderedStores = [...sorted, ...noCoords];
-      } catch (_) {
-        // fall through with unsorted stores
-      }
+      } catch (_) {}
     }
 
-    // Build Google Maps multi-stop URL
-    const stops = orderedStores
-      .map((s) => encodeURIComponent(s.address ?? `${s.storeName}`))
-      .join('/');
-    const url = `https://www.google.com/maps/dir/My+Location/${stops}/`;
+    const encoded = orderedStores.map((s) => encodeURIComponent(s.address ?? s.storeName));
+    const saddrCoord = userLat != null ? `${userLat},${userLng}` : '';
 
-    Linking.openURL(url).catch(() =>
-      Alert.alert('Could not open Maps', 'Make sure Google Maps or a browser is installed.'),
-    );
+    function openGoogleMaps() {
+      const appUrl = `comgooglemaps://?saddr=${saddrCoord}&daddr=${encoded.join('+to:')}&directionsmode=driving`;
+      const webUrl = `https://www.google.com/maps/dir/${saddrCoord || 'My+Location'}/${encoded.join('/')}/`;
+      Linking.canOpenURL(appUrl).then((supported) => {
+        Linking.openURL(supported ? appUrl : webUrl).catch(() =>
+          Alert.alert('Could not open Google Maps'),
+        );
+      });
+    }
+
+    function openAppleMaps() {
+      const saddrParam = saddrCoord ? `saddr=${saddrCoord}&` : '';
+      Linking.openURL(`maps://?${saddrParam}daddr=${encoded[0]}&dirflg=d`).catch(() =>
+        Alert.alert('Could not open Apple Maps'),
+      );
+    }
+
+    if (Platform.OS === 'ios') {
+      const subtitle = orderedStores.length > 1
+        ? 'Google Maps supports all stops. Apple Maps navigates to the first stop only.'
+        : '';
+      Alert.alert('Navigate with…', subtitle, [
+        { text: 'Google Maps', onPress: openGoogleMaps },
+        { text: 'Apple Maps', onPress: openAppleMaps },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    } else {
+      openGoogleMaps();
+    }
+  }
+
+  async function handleShare() {
+    if (items.length === 0) return;
+    setSharing(true);
+    try {
+      const { webUrl, code } = await shareCart(items);
+
+      // Build a readable text list
+      const lines: string[] = ['🗺️ My Chifufu route:\n'];
+      for (const store of stores) {
+        lines.push(`🏪 ${store.storeName}`);
+        for (const item of store.items) {
+          lines.push(`  • ${item.description} ×${item.quantity} — ${item.price} each`);
+        }
+        lines.push('');
+      }
+      const total = stores.flatMap(s => s.items).reduce((sum, i) => sum + i.priceValue * i.quantity, 0);
+      lines.push(`Estimated total: $${total.toFixed(2)}`);
+      lines.push(`\nOpen in Chifufu app: ${webUrl}`);
+
+      await Share.share({ message: lines.join('\n'), url: webUrl });
+    } catch {
+      Alert.alert('Could not share', 'Make sure you are connected to the internet and try again.');
+    } finally {
+      setSharing(false);
+    }
   }
 
   if (items.length === 0) {
@@ -131,14 +187,14 @@ export default function BucketScreen() {
           <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel="Back">
             <Text style={styles.backChevron}>‹</Text>
           </TouchableOpacity>
-          <Text style={[styles.navTitle, { color: c.text }]}>Grocery Bucket</Text>
+          <Text style={[styles.navTitle, { color: c.text }]}>My Route</Text>
           <View style={{ width: 28 }} />
         </View>
         <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>🛒</Text>
-          <Text style={[styles.emptyTitle, { color: c.text }]}>Your bucket is empty</Text>
+          <Text style={styles.emptyIcon}>🗺️</Text>
+          <Text style={[styles.emptyTitle, { color: c.text }]}>Your route is empty</Text>
           <Text style={[styles.emptySub, { color: c.textSec }]}>
-            Tap 🛒 on any result to add items here, then build a route to visit all stores.
+            Tap + on any result to add stops, then navigate to all stores in one trip.
           </Text>
         </View>
       </SafeAreaView>
@@ -154,10 +210,10 @@ export default function BucketScreen() {
           <Text style={styles.backChevron}>‹</Text>
         </TouchableOpacity>
         <Text style={[styles.navTitle, { color: c.text }]}>
-          Grocery Bucket · {count} {count === 1 ? 'item' : 'items'}
+          My Route · {count} {count === 1 ? 'item' : 'items'}
         </Text>
         <TouchableOpacity onPress={() => {
-          Alert.alert('Clear bucket?', 'This will remove all items.', [
+          Alert.alert('Clear route?', 'This will remove all stops.', [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Clear', style: 'destructive', onPress: clear },
           ]);
@@ -223,10 +279,116 @@ export default function BucketScreen() {
       />
 
       <View style={[styles.ctaWrap, { backgroundColor: c.bg }]}>
+        <View style={styles.ctaRow}>
+          <TouchableOpacity
+            style={[styles.secondaryBtn, { borderColor: c.border }]}
+            onPress={() => {
+              Alert.prompt(
+                'Save Route',
+                'Give this route a name',
+                (name) => {
+                  if (name?.trim()) {
+                    saveRoute(name, items);
+                    Alert.alert('Saved!', `"${name.trim()}" saved to your routes.`);
+                  }
+                },
+                'plain-text',
+                `Route ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+              );
+            }}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.secondaryBtnText, { color: c.textSec }]}>💾  Save</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.secondaryBtn, { borderColor: c.border }]}
+            onPress={() => setShowSaved(true)}
+            accessibilityRole="button"
+          >
+            <Text style={[styles.secondaryBtnText, { color: c.textSec }]}>
+              📂  Saved{savedRoutes.length > 0 ? ` (${savedRoutes.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <TouchableOpacity
+          style={[styles.shareBtn, { borderColor: GREEN }]}
+          onPress={handleShare}
+          disabled={sharing}
+          accessibilityRole="button"
+        >
+          {sharing
+            ? <ActivityIndicator size="small" color={GREEN} />
+            : <Text style={[styles.shareBtnText, { color: GREEN }]}>↑  Share Route with a Friend</Text>
+          }
+        </TouchableOpacity>
         <TouchableOpacity style={styles.cta} onPress={buildRoute} accessibilityRole="button">
-          <Text style={styles.ctaText}>🗺️  Build Route — {stores.length} {stores.length === 1 ? 'stop' : 'stops'}</Text>
+          <Text style={styles.ctaText}>🗺️  Navigate — {stores.length} {stores.length === 1 ? 'stop' : 'stops'}</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Saved Routes modal */}
+      <Modal visible={showSaved} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowSaved(false)}>
+        <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]}>
+          <View style={[styles.nav, { borderBottomColor: c.border }]}>
+            <View style={{ width: 28 }} />
+            <Text style={[styles.navTitle, { color: c.text }]}>Saved Routes</Text>
+            <TouchableOpacity onPress={() => setShowSaved(false)}>
+              <Text style={[styles.clearBtn, { color: GREEN }]}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          {savedRoutes.length === 0 ? (
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>📂</Text>
+              <Text style={[styles.emptyTitle, { color: c.text }]}>No saved routes</Text>
+              <Text style={[styles.emptySub, { color: c.textSec }]}>Tap 💾 Save to keep a route for later.</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={savedRoutes}
+              keyExtractor={(r) => r.id}
+              contentContainerStyle={{ padding: 16, gap: 10 }}
+              renderItem={({ item: r }) => (
+                <View style={[styles.savedRouteCard, { backgroundColor: c.bgSec, borderColor: c.border }]}>
+                  <View style={styles.savedRouteHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.savedRouteName, { color: c.text }]}>{r.name}</Text>
+                      <Text style={[styles.savedRouteMeta, { color: c.textTer }]}>
+                        {r.items.length} item{r.items.length !== 1 ? 's' : ''} · {new Date(r.savedAt).toLocaleDateString()}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      onPress={() => {
+                        Alert.alert('Delete route?', `"${r.name}" will be removed.`, [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Delete', style: 'destructive', onPress: () => removeSavedRoute(r.id) },
+                        ]);
+                      }}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={{ color: '#FF3B30', fontSize: 13 }}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.loadRouteBtn, { backgroundColor: GREEN }]}
+                    onPress={() => {
+                      Alert.alert(
+                        'Load route?',
+                        'This will replace your current route.',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Load', onPress: () => { replaceAll(r.items); setShowSaved(false); } },
+                        ],
+                      );
+                    }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Load Route</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            />
+          )}
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -286,7 +448,31 @@ const styles = StyleSheet.create({
   },
   totalLabel: { fontSize: 14 },
   totalAmount: { fontSize: 20, fontWeight: '600', color: GREEN },
-  ctaWrap: { paddingHorizontal: 24, paddingBottom: 32, paddingTop: 12 },
+  ctaWrap: { paddingHorizontal: 24, paddingBottom: 32, paddingTop: 12, gap: 10 },
+  ctaRow: { flexDirection: 'row', gap: 10 },
+  secondaryBtn: {
+    flex: 1, borderRadius: 12, padding: 13,
+    alignItems: 'center', borderWidth: 0.5,
+  },
+  secondaryBtnText: { fontSize: 14, fontWeight: '500' },
+  savedRouteCard: {
+    borderRadius: 14, borderWidth: 0.5, padding: 14, gap: 10,
+  },
+  savedRouteHeader: { flexDirection: 'row', alignItems: 'center' },
+  savedRouteName: { fontSize: 15, fontWeight: '600' },
+  savedRouteMeta: { fontSize: 12, marginTop: 2 },
+  loadRouteBtn: {
+    borderRadius: 10, paddingVertical: 9, alignItems: 'center',
+  },
+  shareBtn: {
+    borderRadius: 12,
+    padding: 14,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  shareBtnText: { fontSize: 15, fontWeight: '500' },
   cta: {
     backgroundColor: GREEN, borderRadius: 12,
     padding: 16, alignItems: 'center',

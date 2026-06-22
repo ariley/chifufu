@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
-  ActivityIndicator,
-  Alert,
+  Animated,
   FlatList,
   SafeAreaView,
   ScrollView,
@@ -32,6 +31,7 @@ const CATEGORY_LABELS: Record<CategoryKey, string> = {
   'grocery': 'Groceries',
   'under5': 'Under $5',
   'under10': 'Under $10',
+  'pet-stores': 'Pet Stores',
 };
 
 const BADGE_CONFIG: Record<BadgeKey, { bg: string; color: string; label: string }> = {
@@ -44,6 +44,7 @@ const CHIPS: { key: CategoryKey; label: string }[] = [
   { key: 'go-out', label: 'Go out' },
   { key: 'order-in', label: 'Order in' },
   { key: 'grocery', label: 'Groceries' },
+  { key: 'pet-stores', label: '🐾 Pet Stores' },
   { key: 'under5', label: 'Under $5' },
   { key: 'under10', label: 'Under $10' },
 ];
@@ -59,7 +60,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
 export default function ResultsScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
-  const { category: initialCategory, location, searchQuery } = route.params;
+  const { category: initialCategory, location, searchQuery, lat, lng } = route.params;
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
 
@@ -70,6 +71,19 @@ export default function ResultsScreen() {
   const { isSaved, toggle } = useSavedContext();
   const { isInBucket, add: addToBucket, count: bucketCount } = useBucketContext();
 
+  const toastOpacity = useRef(new Animated.Value(0)).current;
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function handleAddToRoute(item: ResultItem) {
+    addToBucket(item);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    Animated.sequence([
+      Animated.timing(toastOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+      Animated.delay(1100),
+      Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+    ]).start();
+  }
+
   const c = {
     bg: dark ? '#000000' : '#FFFFFF',
     bgSec: dark ? '#1C1C1E' : '#F2F2F7',
@@ -79,16 +93,18 @@ export default function ResultsScreen() {
     border: dark ? '#38383A' : '#E5E5EA',
   };
 
+  const [error, setError] = useState<string | null>(null);
+
   const loadResults = useCallback(
     async (category: CategoryKey) => {
       setLoading(true);
+      setError(null);
       setResults([]);
       try {
-        const items = await fetchCheapFoodOptions(location, category, searchQuery);
+        const items = await fetchCheapFoodOptions(location, category, searchQuery, lat, lng);
         setResults(items);
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Something went wrong';
-        Alert.alert('Could not load results', msg);
+        setError(err instanceof Error ? err.message : 'Something went wrong');
       } finally {
         setLoading(false);
       }
@@ -137,12 +153,12 @@ export default function ResultsScreen() {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={(e) => { e.stopPropagation(); addToBucket(item); }}
+              onPress={(e) => { e.stopPropagation(); handleAddToRoute(item); }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityLabel={isInBucket(item.id) ? 'In bucket' : 'Add to bucket'}
+              accessibilityLabel={isInBucket(item.id) ? 'In route' : 'Add to route'}
             >
               <Text style={[styles.heartIcon, { color: isInBucket(item.id) ? GREEN : c.textTer }]}>
-                🛒
+                {isInBucket(item.id) ? '✓' : '+'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -186,9 +202,9 @@ export default function ResultsScreen() {
         <TouchableOpacity
           onPress={() => navigation.navigate('Bucket')}
           style={styles.bucketBtn}
-          accessibilityLabel={`Bucket — ${bucketCount} items`}
+          accessibilityLabel={`My Route — ${bucketCount} stops`}
         >
-          <Text style={styles.bucketIcon}>🛒</Text>
+          <Text style={styles.bucketIcon}>🗺️</Text>
           {bucketCount > 0 && (
             <View style={styles.bucketBadge}>
               <Text style={styles.bucketBadgeText}>{bucketCount > 9 ? '9+' : bucketCount}</Text>
@@ -229,11 +245,15 @@ export default function ResultsScreen() {
 
       {/* Results list or map */}
       {loading ? (
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator size="large" color={GREEN} />
-          <Text style={[styles.loadingText, { color: c.textSec }]}>
-            Finding cheap options near you…
-          </Text>
+        <SkeletonList dark={dark} c={c} />
+      ) : error ? (
+        <View style={styles.errorWrap}>
+          <Text style={styles.errorIcon}>⚠️</Text>
+          <Text style={[styles.errorTitle, { color: c.text }]}>Couldn't load results</Text>
+          <Text style={[styles.errorMsg, { color: c.textSec }]}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => loadResults(activeCategory)}>
+            <Text style={styles.retryText}>Try again</Text>
+          </TouchableOpacity>
         </View>
       ) : activeTab === 'map' ? (
         <ResultsMap
@@ -258,9 +278,18 @@ export default function ResultsScreen() {
             ) : null
           }
           ListEmptyComponent={
-            <Text style={[styles.emptyText, { color: c.textSec }]}>
-              No results found. Try a different category.
-            </Text>
+            <View style={styles.emptyWrap}>
+              <Text style={styles.emptyIcon}>🔍</Text>
+              <Text style={[styles.emptyTitle, { color: c.text }]}>No results found</Text>
+              <Text style={[styles.emptyMsg, { color: c.textSec }]}>Try a different category or search term.</Text>
+            </View>
+          }
+          ListFooterComponent={
+            results.length > 0 ? (
+              <Text style={[styles.disclaimer, { color: c.textTer }]}>
+                Prices are AI-generated estimates — verify at the store before you go.
+              </Text>
+            ) : null
           }
         />
       )}
@@ -287,9 +316,46 @@ export default function ResultsScreen() {
           );
         })}
       </View>
+
+      <Animated.View style={[styles.toast, { opacity: toastOpacity }]} pointerEvents="none">
+        <Text style={styles.toastText}>✓  Added to route</Text>
+      </Animated.View>
     </SafeAreaView>
   );
 }
+
+// ── Skeleton loading cards ─────────────────────────────────────
+function SkeletonCard({ dark }: { dark: boolean }) {
+  const anim = useRef(new Animated.Value(0.4)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(anim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+      ]),
+    ).start();
+  }, [anim]);
+  const bg = dark ? '#2C2C2E' : '#E5E5EA';
+  return (
+    <Animated.View style={[skStyles.card, { opacity: anim, borderColor: dark ? '#38383A' : '#E5E5EA', backgroundColor: dark ? '#1C1C1E' : '#F2F2F7' }]}>
+      <View style={[skStyles.line, { width: '60%', backgroundColor: bg }]} />
+      <View style={[skStyles.line, { width: '35%', marginTop: 6, backgroundColor: bg }]} />
+      <View style={[skStyles.line, { width: '80%', marginTop: 10, height: 10, backgroundColor: bg }]} />
+    </Animated.View>
+  );
+}
+function SkeletonList({ dark, c }: { dark: boolean; c: { textTer: string } }) {
+  return (
+    <View style={{ flex: 1, padding: 16, gap: 10 }}>
+      <View style={[{ height: 12, width: 100, borderRadius: 6, marginBottom: 4, backgroundColor: dark ? '#2C2C2E' : '#E5E5EA' }]} />
+      {[0, 1, 2, 3].map((i) => <SkeletonCard key={i} dark={dark} />)}
+    </View>
+  );
+}
+const skStyles = StyleSheet.create({
+  card: { borderRadius: 12, padding: 14, borderWidth: 0.5 },
+  line: { height: 14, borderRadius: 7 },
+});
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
@@ -324,13 +390,6 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
   },
   chipText: { fontSize: 12, fontWeight: '500' },
-  loadingWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 12,
-  },
-  loadingText: { fontSize: 14 },
   listContent: { padding: 16, paddingBottom: 24 },
   sectionSep: {
     fontSize: 11,
@@ -372,7 +431,35 @@ const styles = StyleSheet.create({
   badge: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
   badgeText: { fontSize: 11 },
   dist: { fontSize: 11 },
-  emptyText: { textAlign: 'center', marginTop: 48, fontSize: 14 },
+  errorWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8 },
+  errorIcon: { fontSize: 40, marginBottom: 4 },
+  errorTitle: { fontSize: 17, fontWeight: '600', textAlign: 'center' },
+  errorMsg: { fontSize: 13, textAlign: 'center', lineHeight: 18 },
+  retryBtn: {
+    marginTop: 12,
+    backgroundColor: GREEN,
+    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+  },
+  retryText: { color: '#fff', fontWeight: '500', fontSize: 14 },
+  emptyWrap: { alignItems: 'center', marginTop: 56, padding: 24, gap: 8 },
+  emptyIcon: { fontSize: 40, marginBottom: 4 },
+  emptyTitle: { fontSize: 17, fontWeight: '600', textAlign: 'center' },
+  emptyMsg: { fontSize: 13, textAlign: 'center' },
+  disclaimer: { fontSize: 11, textAlign: 'center', marginTop: 24, marginBottom: 8, paddingHorizontal: 16, lineHeight: 16 },
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+  loadingText: { fontSize: 14 },
+  toast: {
+    position: 'absolute',
+    bottom: 72,
+    alignSelf: 'center',
+    backgroundColor: '#1D9E75',
+    borderRadius: 20,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+  },
+  toastText: { color: '#fff', fontSize: 14, fontWeight: '500' },
   tabBar: {
     flexDirection: 'row',
     justifyContent: 'space-around',

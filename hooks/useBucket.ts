@@ -44,7 +44,9 @@ export function useBucket() {
 
   const clear = useCallback(() => persist([]), [persist]);
 
+  const replaceAll = useCallback((next: BucketItem[]) => persist(next), [persist]);
+
   const count = items.reduce((sum, i) => sum + i.quantity, 0);
 
-  return { items, isInBucket, add, remove, setQuantity, clear, count, loaded };
+  return { items, isInBucket, add, remove, setQuantity, clear, replaceAll, count, loaded };
 }

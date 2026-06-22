@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Platform,
@@ -16,6 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { CategoryKey, RootStackParamList } from '../types';
+import { useSearchHistory } from '../hooks/useSearchHistory';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -54,6 +55,13 @@ const OPTIONS: Option[] = [
     icon: '🍽️',
     iconBg: '#FAECE7',
   },
+  {
+    key: 'pet-stores',
+    title: 'Pet Stores',
+    description: 'Cheapest pet food and supplies',
+    icon: '🐾',
+    iconBg: '#F3E8FB',
+  },
 ];
 
 export default function HomeScreen() {
@@ -62,8 +70,11 @@ export default function HomeScreen() {
   const dark = scheme === 'dark';
   const [selected, setSelected] = useState<HomeCategory>('grocery');
   const [location, setLocation] = useState('');
+  const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<TextInput>(null);
+  const { history, push: pushHistory, remove: removeHistory } = useSearchHistory();
 
   useEffect(() => {
     detectLocation();
@@ -78,6 +89,7 @@ export default function HomeScreen() {
         return;
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setGpsCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
       const [geo] = await Location.reverseGeocodeAsync({
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
@@ -124,15 +136,29 @@ export default function HomeScreen() {
     }
   }
 
+  function navigate(query?: string, cat?: HomeCategory) {
+    const q = (query ?? searchQuery).trim();
+    const category = cat ?? selected;
+    if (q) pushHistory(q, category, location);
+    navigation.navigate('Results', {
+      category,
+      location,
+      searchQuery: q || undefined,
+      lat: gpsCoords?.lat,
+      lng: gpsCoords?.lng,
+    });
+  }
+
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]}>
       <StatusBar style={dark ? 'light' : 'dark'} />
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={styles.top}>
-          <Text style={[styles.appLabel, { color: c.textTer }]}>CHEAP EATS</Text>
+          <Text style={[styles.appLabel, { color: c.textTer }]}>CHIFUFU</Text>
           <Text style={[styles.headline, { color: c.text }]}>
             {"What's the cheapest\noption near you?"}
           </Text>
@@ -158,17 +184,14 @@ export default function HomeScreen() {
         <View style={[styles.searchRow, { backgroundColor: c.bgSec, borderColor: c.border }]}>
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
+            ref={searchInputRef}
             style={[styles.searchInput, { color: c.text }]}
             placeholder="Search for an item… e.g. avocados"
             placeholderTextColor={c.textTer}
             value={searchQuery}
             onChangeText={setSearchQuery}
             returnKeyType="search"
-            onSubmitEditing={() => {
-              if (searchQuery.trim()) {
-                navigation.navigate('Results', { category: selected, location, searchQuery: searchQuery.trim() });
-              }
-            }}
+            onSubmitEditing={() => { if (searchQuery.trim()) navigate(); }}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -176,6 +199,40 @@ export default function HomeScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Recent searches */}
+        {history.length > 0 && !searchQuery.trim() && (
+          <View style={styles.historySection}>
+            <View style={styles.historyHeader}>
+              <Text style={[styles.sectionLabel, { color: c.textTer, paddingHorizontal: 0 }]}>RECENT</Text>
+              <TouchableOpacity onPress={() => {
+                Alert.alert('Clear history?', '', [
+                  { text: 'Cancel', style: 'cancel' },
+                  { text: 'Clear', style: 'destructive', onPress: () => history.forEach(e => removeHistory(e.query)) },
+                ]);
+              }}>
+                <Text style={[styles.clearHistoryBtn, { color: c.textTer }]}>Clear</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.historyChips}
+            >
+              {history.map((entry) => (
+                <TouchableOpacity
+                  key={entry.query + entry.timestamp}
+                  style={[styles.historyChip, { backgroundColor: c.bgSec, borderColor: c.border }]}
+                  onPress={() => navigate(entry.query, entry.category as HomeCategory)}
+                >
+                  <Text style={[styles.historyChipText, { color: c.textSec }]} numberOfLines={1}>
+                    🕐 {entry.query}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
 
         <Text style={[styles.sectionLabel, { color: c.textTer }]}>
           {searchQuery.trim() ? 'OR BROWSE BY CATEGORY' : 'HOW DO YOU WANT TO EAT?'}
@@ -219,11 +276,7 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={[styles.cta, locating && { opacity: 0.5 }]}
           disabled={locating}
-          onPress={() => navigation.navigate('Results', {
-            category: selected,
-            location,
-            searchQuery: searchQuery.trim() || undefined,
-          })}
+          onPress={() => navigate()}
           accessibilityRole="button"
         >
           <Text style={styles.ctaText}>
@@ -256,7 +309,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 24,
-    marginBottom: 20,
+    marginBottom: 12,
     borderRadius: 12,
     padding: 12,
     borderWidth: 0.5,
@@ -264,11 +317,31 @@ const styles = StyleSheet.create({
   },
   searchIcon: { fontSize: 16 },
   searchInput: { flex: 1, fontSize: 15 },
+  historySection: {
+    marginHorizontal: 24,
+    marginBottom: 16,
+    gap: 8,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  clearHistoryBtn: { fontSize: 12 },
+  historyChips: { gap: 8, paddingRight: 4 },
+  historyChip: {
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 0.5,
+    maxWidth: 180,
+  },
+  historyChipText: { fontSize: 13 },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: 24,
-    marginBottom: 24,
+    marginBottom: 16,
     borderRadius: 12,
     padding: 12,
     borderWidth: 0.5,

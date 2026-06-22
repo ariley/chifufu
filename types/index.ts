@@ -1,4 +1,11 @@
-export type CategoryKey = 'go-out' | 'order-in' | 'grocery' | 'under5' | 'under10';
+export type CategoryKey = 'go-out' | 'order-in' | 'grocery' | 'under5' | 'under10' | 'pet-stores';
+
+export interface SearchHistoryEntry {
+  query: string;
+  category: CategoryKey;
+  location: string;
+  timestamp: number;
+}
 export type BadgeKey = 'deal' | 'fast' | 'close';
 
 export interface ResultItem {
@@ -21,7 +28,7 @@ export interface BucketItem extends ResultItem {
 
 export type RootStackParamList = {
   Home: undefined;
-  Results: { category: CategoryKey; location: string; searchQuery?: string };
+  Results: { category: CategoryKey; location: string; searchQuery?: string; lat?: number; lng?: number };
   Detail: { item: ResultItem; location: string };
   Bucket: undefined;
 };
