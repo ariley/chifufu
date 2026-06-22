@@ -31,4 +31,6 @@ export type RootStackParamList = {
   Results: { category: CategoryKey; location: string; searchQuery?: string; lat?: number; lng?: number };
   Detail: { item: ResultItem; location: string };
   Bucket: undefined;
+  Auth: undefined;
+  Profile: undefined;
 };

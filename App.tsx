@@ -7,11 +7,14 @@ import HomeScreen from './screens/HomeScreen';
 import ResultsScreen from './screens/ResultsScreen';
 import DetailScreen from './screens/DetailScreen';
 import BucketScreen from './screens/BucketScreen';
+import AuthScreen from './screens/AuthScreen';
+import ProfileScreen from './screens/ProfileScreen';
 import { useSaved } from './hooks/useSaved';
 import { useBucket } from './hooks/useBucket';
 import { useSavedRoutes, SavedRoute } from './hooks/useSavedRoutes';
 import { BucketItem, ResultItem, RootStackParamList } from './types';
 import { loadSharedCart } from './utils/anthropic';
+import { AuthProvider } from './contexts/AuthContext';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -111,19 +114,23 @@ export default function App() {
   }, []);
 
   return (
-    <SavedContext.Provider value={savedState}>
-      <SavedRoutesContext.Provider value={savedRoutesState}>
-      <BucketContext.Provider value={bucketState}>
-        <NavigationContainer>
-          <Stack.Navigator screenOptions={{ headerShown: false }}>
-            <Stack.Screen name="Home" component={HomeScreen} />
-            <Stack.Screen name="Results" component={ResultsScreen} />
-            <Stack.Screen name="Detail" component={DetailScreen} />
-            <Stack.Screen name="Bucket" component={BucketScreen} />
-          </Stack.Navigator>
-        </NavigationContainer>
-      </BucketContext.Provider>
-      </SavedRoutesContext.Provider>
-    </SavedContext.Provider>
+    <AuthProvider>
+      <SavedContext.Provider value={savedState}>
+        <SavedRoutesContext.Provider value={savedRoutesState}>
+          <BucketContext.Provider value={bucketState}>
+            <NavigationContainer>
+              <Stack.Navigator screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="Home" component={HomeScreen} />
+                <Stack.Screen name="Results" component={ResultsScreen} />
+                <Stack.Screen name="Detail" component={DetailScreen} />
+                <Stack.Screen name="Bucket" component={BucketScreen} />
+                <Stack.Screen name="Auth" component={AuthScreen} />
+                <Stack.Screen name="Profile" component={ProfileScreen} />
+              </Stack.Navigator>
+            </NavigationContainer>
+          </BucketContext.Provider>
+        </SavedRoutesContext.Provider>
+      </SavedContext.Provider>
+    </AuthProvider>
   );
 }

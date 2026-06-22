@@ -17,6 +17,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { CategoryKey, RootStackParamList } from '../types';
 import { useSearchHistory } from '../hooks/useSearchHistory';
+import { useAuth } from '../contexts/AuthContext';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
@@ -68,6 +69,7 @@ export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
+  const { isAuthenticated } = useAuth();
   const [selected, setSelected] = useState<HomeCategory>('grocery');
   const [location, setLocation] = useState('');
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -158,7 +160,17 @@ export default function HomeScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.top}>
-          <Text style={[styles.appLabel, { color: c.textTer }]}>CHIFUFU</Text>
+          <View style={styles.topRow}>
+            <Text style={[styles.appLabel, { color: c.textTer }]}>CHIFUFU</Text>
+            <TouchableOpacity
+              onPress={() => navigation.navigate(isAuthenticated ? 'Profile' : 'Auth')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityLabel={isAuthenticated ? 'View profile' : 'Sign in'}
+              accessibilityRole="button"
+            >
+              <Text style={styles.profileIcon}>👤</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={[styles.headline, { color: c.text }]}>
             {"What's the cheapest\noption near you?"}
           </Text>
@@ -292,12 +304,18 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   scroll: { paddingBottom: 120 },
   top: { paddingHorizontal: 24, paddingTop: 28, paddingBottom: 16 },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
   appLabel: {
     fontSize: 12,
     fontWeight: '500',
     letterSpacing: 1,
-    marginBottom: 6,
   },
+  profileIcon: { fontSize: 20 },
   headline: {
     fontSize: 26,
     fontWeight: '500',
