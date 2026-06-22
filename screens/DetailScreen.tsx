@@ -10,6 +10,7 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
+import { useThemeContext } from '../contexts/ThemeContext';
 import MapView, { Marker } from 'react-native-maps';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -19,9 +20,6 @@ import { useSavedContext } from '../App';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Detail'>;
 type Route = RouteProp<RootStackParamList, 'Detail'>;
-
-const GREEN = '#1D9E75';
-const GREEN_LIGHT = '#E1F5EE';
 
 const BADGE_CONFIG: Record<BadgeKey, { bg: string; color: string; label: string }> = {
   deal: { bg: '#EAF3DE', color: '#3B6D11', label: 'Best deal' },
@@ -35,15 +33,7 @@ export default function DetailScreen() {
   const { item, location } = route.params;
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
-
-  const c = {
-    bg: dark ? '#000000' : '#FFFFFF',
-    bgSec: dark ? '#1C1C1E' : '#F2F2F7',
-    text: dark ? '#FFFFFF' : '#000000',
-    textSec: dark ? '#ABABAB' : '#6C6C70',
-    textTer: dark ? '#636366' : '#AEAEB2',
-    border: dark ? '#38383A' : '#E5E5EA',
-  };
+  const { bg, bgSec, text, textSec, textTer, border, accent, accentLight } = useThemeContext();
 
   const { isSaved, toggle } = useSavedContext();
   const isDelivery = !!item.platform;
@@ -65,20 +55,20 @@ export default function DetailScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: bg }]}>
       <StatusBar style={dark ? 'light' : 'dark'} />
 
-      <View style={[styles.nav, { backgroundColor: c.bg, borderBottomColor: c.border }]}>
+      <View style={[styles.nav, { backgroundColor: bg, borderBottomColor: border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel="Back">
-          <Text style={styles.backChevron}>‹</Text>
+          <Text style={[styles.backChevron, { color: accent }]}>‹</Text>
         </TouchableOpacity>
-        <Text style={[styles.navTitle, { color: c.text }]}>Details</Text>
+        <Text style={[styles.navTitle, { color: text }]}>Details</Text>
         <TouchableOpacity
           onPress={() => toggle(item)}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           accessibilityLabel={isSaved(item.id) ? 'Unsave' : 'Save'}
         >
-          <Text style={{ fontSize: 22, color: isSaved(item.id) ? '#FF3B30' : c.textTer }}>
+          <Text style={{ fontSize: 22, color: isSaved(item.id) ? '#FF3B30' : textTer }}>
             {isSaved(item.id) ? '♥' : '♡'}
           </Text>
         </TouchableOpacity>
@@ -104,7 +94,7 @@ export default function DetailScreen() {
             >
               <Marker
                 coordinate={{ latitude: item.lat, longitude: item.lng }}
-                pinColor={GREEN}
+                pinColor={accent}
               />
             </MapView>
             <View style={styles.miniMapOverlay}>
@@ -113,15 +103,15 @@ export default function DetailScreen() {
           </TouchableOpacity>
         )}
 
-        <View style={[styles.headerCard, { backgroundColor: c.bgSec, borderColor: c.border }]}>
+        <View style={[styles.headerCard, { backgroundColor: bgSec, borderColor: border }]}>
           <View style={styles.headerTop}>
-            <Text style={[styles.name, { color: c.text }]}>{item.name}</Text>
+            <Text style={[styles.name, { color: text }]}>{item.name}</Text>
             <View style={styles.priceWrap}>
-              <Text style={styles.price}>{item.price}</Text>
-              <Text style={[styles.priceNote, { color: c.textTer }]}>est.</Text>
+              <Text style={[styles.price, { color: accent }]}>{item.price}</Text>
+              <Text style={[styles.priceNote, { color: textTer }]}>est.</Text>
             </View>
           </View>
-          <Text style={[styles.description, { color: c.textSec }]}>{item.description}</Text>
+          <Text style={[styles.description, { color: textSec }]}>{item.description}</Text>
           {item.badges.length > 0 && (
             <View style={styles.badges}>
               {item.badges.map((b) => {
@@ -136,38 +126,38 @@ export default function DetailScreen() {
           )}
         </View>
 
-        <View style={[styles.infoCard, { backgroundColor: c.bgSec, borderColor: c.border }]}>
+        <View style={[styles.infoCard, { backgroundColor: bgSec, borderColor: border }]}>
           {item.address ? (
-            <View style={[styles.infoRow, { borderBottomColor: c.border, borderBottomWidth: 0.5 }]}>
+            <View style={[styles.infoRow, { borderBottomColor: border, borderBottomWidth: 0.5 }]}>
               <Text style={styles.infoEmoji}>📍</Text>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.infoLabel, { color: c.textTer }]}>Address</Text>
-                <Text style={[styles.infoValue, { color: c.text }]}>{item.address}</Text>
+                <Text style={[styles.infoLabel, { color: textTer }]}>Address</Text>
+                <Text style={[styles.infoValue, { color: text }]}>{item.address}</Text>
               </View>
             </View>
           ) : null}
           {item.platform ? (
-            <View style={[styles.infoRow, { borderBottomColor: c.border, borderBottomWidth: 0.5 }]}>
+            <View style={[styles.infoRow, { borderBottomColor: border, borderBottomWidth: 0.5 }]}>
               <Text style={styles.infoEmoji}>🚲</Text>
               <View>
-                <Text style={[styles.infoLabel, { color: c.textTer }]}>Order via</Text>
-                <Text style={[styles.infoValue, { color: c.text }]}>{item.platform}</Text>
+                <Text style={[styles.infoLabel, { color: textTer }]}>Order via</Text>
+                <Text style={[styles.infoValue, { color: text }]}>{item.platform}</Text>
               </View>
             </View>
           ) : null}
           <View style={styles.infoRow}>
             <Text style={styles.infoEmoji}>📏</Text>
             <View>
-              <Text style={[styles.infoLabel, { color: c.textTer }]}>Distance</Text>
-              <Text style={[styles.infoValue, { color: c.text }]}>{item.distance}</Text>
+              <Text style={[styles.infoLabel, { color: textTer }]}>Distance</Text>
+              <Text style={[styles.infoValue, { color: text }]}>{item.distance}</Text>
             </View>
           </View>
         </View>
       </ScrollView>
 
-      <View style={[styles.ctaWrap, { backgroundColor: c.bg }]}>
-        <TouchableOpacity style={styles.cta} onPress={handleCTA} accessibilityRole="button">
-          <Text style={styles.ctaText}>{ctaIcon}  {ctaLabel}</Text>
+      <View style={[styles.ctaWrap, { backgroundColor: bg }]}>
+        <TouchableOpacity style={[styles.cta, { backgroundColor: accent }]} onPress={handleCTA} accessibilityRole="button">
+          <Text style={[styles.ctaText, { color: accentLight }]}>{ctaIcon}  {ctaLabel}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -183,7 +173,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 0.5,
   },
-  backChevron: { fontSize: 28, color: GREEN, lineHeight: 32 },
+  backChevron: { fontSize: 28, lineHeight: 32 },
   navTitle: {
     flex: 1,
     textAlign: 'center',
@@ -220,7 +210,7 @@ const styles = StyleSheet.create({
   },
   name: { fontSize: 20, fontWeight: '600', flex: 1, marginRight: 8 },
   priceWrap: { alignItems: 'flex-end' },
-  price: { fontSize: 22, fontWeight: '600', color: GREEN },
+  price: { fontSize: 22, fontWeight: '600' },
   priceNote: { fontSize: 10, marginTop: 1 },
   description: { fontSize: 14, marginBottom: 12 },
   badges: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
@@ -245,11 +235,10 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   cta: {
-    backgroundColor: GREEN,
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ctaText: { color: GREEN_LIGHT, fontSize: 16, fontWeight: '500' },
+  ctaText: { fontSize: 16, fontWeight: '500' },
 });

@@ -10,6 +10,7 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
+import { useThemeContext } from '../contexts/ThemeContext';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
@@ -21,9 +22,6 @@ import SavedScreen from './SavedScreen';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Results'>;
 type Route = RouteProp<RootStackParamList, 'Results'>;
-
-const GREEN = '#1D9E75';
-const GREEN_LIGHT = '#E1F5EE';
 
 const CATEGORY_LABELS: Record<CategoryKey, string> = {
   'go-out': 'Go out',
@@ -63,6 +61,7 @@ export default function ResultsScreen() {
   const { category: initialCategory, location, searchQuery, lat, lng } = route.params;
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
+  const { bg, bgSec, text, textSec, textTer, border, accent, accentLight } = useThemeContext();
 
   const [activeCategory, setActiveCategory] = useState<CategoryKey>(initialCategory);
   const [results, setResults] = useState<ResultItem[]>([]);
@@ -83,15 +82,6 @@ export default function ResultsScreen() {
       Animated.timing(toastOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
     ]).start();
   }
-
-  const c = {
-    bg: dark ? '#000000' : '#FFFFFF',
-    bgSec: dark ? '#1C1C1E' : '#F2F2F7',
-    text: dark ? '#FFFFFF' : '#000000',
-    textSec: dark ? '#ABABAB' : '#6C6C70',
-    textTer: dark ? '#636366' : '#AEAEB2',
-    border: dark ? '#38383A' : '#E5E5EA',
-  };
 
   const [error, setError] = useState<string | null>(null);
 
@@ -123,8 +113,8 @@ export default function ResultsScreen() {
         style={[
           styles.card,
           {
-            backgroundColor: c.bg,
-            borderColor: isTop ? GREEN : c.border,
+            backgroundColor: bg,
+            borderColor: isTop ? accent : border,
             borderWidth: isTop ? 2 : 0.5,
           },
         ]}
@@ -133,22 +123,22 @@ export default function ResultsScreen() {
         accessibilityLabel={`${item.name}, ${item.price}`}
       >
         {isTop && (
-          <View style={styles.topPickBadge}>
+          <View style={[styles.topPickBadge, { backgroundColor: accentLight }]}>
             <Text style={styles.topPickText}>Top pick</Text>
           </View>
         )}
         <View style={styles.cardHeader}>
-          <Text style={[styles.cardName, { color: c.text }]} numberOfLines={1}>
+          <Text style={[styles.cardName, { color: text }]} numberOfLines={1}>
             {item.name}
           </Text>
           <View style={styles.cardRight}>
-            <Text style={styles.cardPrice}>{item.price}</Text>
+            <Text style={[styles.cardPrice, { color: accent }]}>{item.price}</Text>
             <TouchableOpacity
               onPress={(e) => { e.stopPropagation(); toggle(item); }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityLabel={isSaved(item.id) ? 'Unsave' : 'Save'}
             >
-              <Text style={[styles.heartIcon, { color: isSaved(item.id) ? '#FF3B30' : c.textTer }]}>
+              <Text style={[styles.heartIcon, { color: isSaved(item.id) ? '#FF3B30' : textTer }]}>
                 {isSaved(item.id) ? '♥' : '♡'}
               </Text>
             </TouchableOpacity>
@@ -157,13 +147,13 @@ export default function ResultsScreen() {
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               accessibilityLabel={isInBucket(item.id) ? 'In route' : 'Add to route'}
             >
-              <Text style={[styles.heartIcon, { color: isInBucket(item.id) ? GREEN : c.textTer }]}>
+              <Text style={[styles.heartIcon, { color: isInBucket(item.id) ? accent : textTer }]}>
                 {isInBucket(item.id) ? '✓' : '+'}
               </Text>
             </TouchableOpacity>
           </View>
         </View>
-        <Text style={[styles.cardSub, { color: c.textSec }]} numberOfLines={1}>
+        <Text style={[styles.cardSub, { color: textSec }]} numberOfLines={1}>
           {item.description}
         </Text>
         <View style={styles.cardMeta}>
@@ -176,26 +166,26 @@ export default function ResultsScreen() {
               </View>
             );
           })}
-          <Text style={[styles.dist, { color: c.textTer }]}>📍 {item.distance}</Text>
+          <Text style={[styles.dist, { color: textTer }]}>📍 {item.distance}</Text>
         </View>
       </TouchableOpacity>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: bg }]}>
       <StatusBar style={dark ? 'light' : 'dark'} />
 
       {/* Nav bar */}
-      <View style={[styles.nav, { backgroundColor: c.bg, borderBottomColor: c.border }]}>
+      <View style={[styles.nav, { backgroundColor: bg, borderBottomColor: border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel="Back">
-          <Text style={styles.backChevron}>‹</Text>
+          <Text style={[styles.backChevron, { color: accent }]}>‹</Text>
         </TouchableOpacity>
         <View style={styles.navCenter}>
-          <Text style={[styles.navTitle, { color: c.text }]} numberOfLines={1}>
+          <Text style={[styles.navTitle, { color: text }]} numberOfLines={1}>
             {searchQuery ? `"${searchQuery}"` : CATEGORY_LABELS[activeCategory]}
           </Text>
-          <Text style={[styles.navSub, { color: c.textTer }]}>
+          <Text style={[styles.navSub, { color: textTer }]}>
             {location} · sorted by price
           </Text>
         </View>
@@ -206,7 +196,7 @@ export default function ResultsScreen() {
         >
           <Text style={styles.bucketIcon}>🗺️</Text>
           {bucketCount > 0 && (
-            <View style={styles.bucketBadge}>
+            <View style={[styles.bucketBadge, { backgroundColor: accent }]}>
               <Text style={styles.bucketBadgeText}>{bucketCount > 9 ? '9+' : bucketCount}</Text>
             </View>
           )}
@@ -214,7 +204,7 @@ export default function ResultsScreen() {
       </View>
 
       {/* Filter chips */}
-      <View style={[styles.chipRow, { backgroundColor: c.bg }]}>
+      <View style={[styles.chipRow, { backgroundColor: bg }]}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -228,13 +218,13 @@ export default function ResultsScreen() {
                 style={[
                   styles.chip,
                   {
-                    borderColor: active ? GREEN : c.border,
-                    backgroundColor: active ? GREEN : c.bg,
+                    borderColor: active ? accent : border,
+                    backgroundColor: active ? accent : bg,
                   },
                 ]}
                 onPress={() => setActiveCategory(chip.key)}
               >
-                <Text style={[styles.chipText, { color: active ? GREEN_LIGHT : c.textSec }]}>
+                <Text style={[styles.chipText, { color: active ? accentLight : textSec }]}>
                   {chip.label}
                 </Text>
               </TouchableOpacity>
@@ -245,13 +235,13 @@ export default function ResultsScreen() {
 
       {/* Results list or map */}
       {loading ? (
-        <SkeletonList dark={dark} c={c} />
+        <SkeletonList dark={dark} />
       ) : error ? (
         <View style={styles.errorWrap}>
           <Text style={styles.errorIcon}>⚠️</Text>
-          <Text style={[styles.errorTitle, { color: c.text }]}>Couldn't load results</Text>
-          <Text style={[styles.errorMsg, { color: c.textSec }]}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => loadResults(activeCategory)}>
+          <Text style={[styles.errorTitle, { color: text }]}>Couldn't load results</Text>
+          <Text style={[styles.errorMsg, { color: textSec }]}>{error}</Text>
+          <TouchableOpacity style={[styles.retryBtn, { backgroundColor: accent }]} onPress={() => loadResults(activeCategory)}>
             <Text style={styles.retryText}>Try again</Text>
           </TouchableOpacity>
         </View>
@@ -274,19 +264,19 @@ export default function ResultsScreen() {
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListHeaderComponent={
             results.length > 0 ? (
-              <Text style={[styles.sectionSep, { color: c.textTer }]}>CHEAPEST FIRST</Text>
+              <Text style={[styles.sectionSep, { color: textTer }]}>CHEAPEST FIRST</Text>
             ) : null
           }
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <Text style={styles.emptyIcon}>🔍</Text>
-              <Text style={[styles.emptyTitle, { color: c.text }]}>No results found</Text>
-              <Text style={[styles.emptyMsg, { color: c.textSec }]}>Try a different category or search term.</Text>
+              <Text style={[styles.emptyTitle, { color: text }]}>No results found</Text>
+              <Text style={[styles.emptyMsg, { color: textSec }]}>Try a different category or search term.</Text>
             </View>
           }
           ListFooterComponent={
             results.length > 0 ? (
-              <Text style={[styles.disclaimer, { color: c.textTer }]}>
+              <Text style={[styles.disclaimer, { color: textTer }]}>
                 Prices are AI-generated estimates — verify at the store before you go.
               </Text>
             ) : null
@@ -295,7 +285,7 @@ export default function ResultsScreen() {
       )}
 
       {/* Bottom tab bar */}
-      <View style={[styles.tabBar, { backgroundColor: c.bg, borderTopColor: c.border }]}>
+      <View style={[styles.tabBar, { backgroundColor: bg, borderTopColor: border }]}>
         {TABS.map((tab) => {
           const active = activeTab === tab.key;
           return (
@@ -306,10 +296,10 @@ export default function ResultsScreen() {
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
             >
-              <Text style={[styles.tabIcon, { color: active ? GREEN : c.textTer }]}>
+              <Text style={[styles.tabIcon, { color: active ? accent : textTer }]}>
                 {tab.icon}
               </Text>
-              <Text style={[styles.tabLabel, { color: active ? GREEN : c.textTer }]}>
+              <Text style={[styles.tabLabel, { color: active ? accent : textTer }]}>
                 {tab.label}
               </Text>
             </TouchableOpacity>
@@ -344,7 +334,7 @@ function SkeletonCard({ dark }: { dark: boolean }) {
     </Animated.View>
   );
 }
-function SkeletonList({ dark, c }: { dark: boolean; c: { textTer: string } }) {
+function SkeletonList({ dark }: { dark: boolean }) {
   return (
     <View style={{ flex: 1, padding: 16, gap: 10 }}>
       <View style={[{ height: 12, width: 100, borderRadius: 6, marginBottom: 4, backgroundColor: dark ? '#2C2C2E' : '#E5E5EA' }]} />
@@ -366,7 +356,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 0.5,
   },
-  backChevron: { fontSize: 28, color: GREEN, lineHeight: 32, marginRight: 8 },
+  backChevron: { fontSize: 28, lineHeight: 32, marginRight: 8 },
   navCenter: { flex: 1 },
   navTitle: { fontSize: 16, fontWeight: '500' },
   navSub: { fontSize: 12 },
@@ -375,7 +365,7 @@ const styles = StyleSheet.create({
   bucketIcon: { fontSize: 20 },
   bucketBadge: {
     position: 'absolute', top: -4, right: -6,
-    backgroundColor: GREEN, borderRadius: 8,
+    borderRadius: 8,
     minWidth: 16, height: 16,
     alignItems: 'center', justifyContent: 'center',
     paddingHorizontal: 3,
@@ -404,7 +394,6 @@ const styles = StyleSheet.create({
   },
   topPickBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: GREEN_LIGHT,
     borderRadius: 20,
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -419,7 +408,7 @@ const styles = StyleSheet.create({
   },
   cardName: { fontSize: 15, fontWeight: '500', flex: 1, marginRight: 6 },
   cardRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardPrice: { fontSize: 16, fontWeight: '500', color: GREEN },
+  cardPrice: { fontSize: 16, fontWeight: '500' },
   heartIcon: { fontSize: 18 },
   cardSub: { fontSize: 12, marginBottom: 6 },
   cardMeta: {
@@ -437,7 +426,6 @@ const styles = StyleSheet.create({
   errorMsg: { fontSize: 13, textAlign: 'center', lineHeight: 18 },
   retryBtn: {
     marginTop: 12,
-    backgroundColor: GREEN,
     borderRadius: 10,
     paddingHorizontal: 24,
     paddingVertical: 10,

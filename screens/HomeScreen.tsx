@@ -17,12 +17,10 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { CategoryKey, RootStackParamList } from '../types';
 import { useSearchHistory } from '../hooks/useSearchHistory';
+import { useThemeContext } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
-
-const GREEN = '#1D9E75';
-const GREEN_LIGHT = '#E1F5EE';
 
 type HomeCategory = Exclude<CategoryKey, 'under5' | 'under10'>;
 
@@ -69,6 +67,7 @@ export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
+  const { bg, bgSec, text, textSec, textTer, border, accent, accentLight } = useThemeContext();
   const { isAuthenticated } = useAuth();
   const [selected, setSelected] = useState<HomeCategory>('grocery');
   const [location, setLocation] = useState('');
@@ -110,15 +109,6 @@ export default function HomeScreen() {
     }
   }
 
-  const c = {
-    bg: dark ? '#000000' : '#FFFFFF',
-    bgSec: dark ? '#1C1C1E' : '#F2F2F7',
-    text: dark ? '#FFFFFF' : '#000000',
-    textSec: dark ? '#ABABAB' : '#6C6C70',
-    textTer: dark ? '#636366' : '#AEAEB2',
-    border: dark ? '#38383A' : '#E5E5EA',
-  };
-
   function handleLocationTap() {
     if (Platform.OS === 'ios') {
       Alert.prompt(
@@ -152,7 +142,7 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: bg }]}>
       <StatusBar style={dark ? 'light' : 'dark'} />
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -161,45 +151,55 @@ export default function HomeScreen() {
       >
         <View style={styles.top}>
           <View style={styles.topRow}>
-            <Text style={[styles.appLabel, { color: c.textTer }]}>CHIFUFU</Text>
-            <TouchableOpacity
-              onPress={() => navigation.navigate(isAuthenticated ? 'Profile' : 'Auth')}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              accessibilityLabel={isAuthenticated ? 'View profile' : 'Sign in'}
-              accessibilityRole="button"
-            >
-              <Text style={styles.profileIcon}>👤</Text>
-            </TouchableOpacity>
+            <Text style={[styles.appLabel, { color: textTer }]}>CHIFUFU</Text>
+            <View style={styles.topRowIcons}>
+              <TouchableOpacity
+                onPress={() => navigation.navigate(isAuthenticated ? 'Profile' : 'Auth')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel={isAuthenticated ? 'View profile' : 'Sign in'}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.gearIcon, { color: textTer }]}>👤</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Settings')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="Settings"
+                accessibilityRole="button"
+              >
+                <Text style={[styles.gearIcon, { color: textTer }]}>⚙️</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-          <Text style={[styles.headline, { color: c.text }]}>
+          <Text style={[styles.headline, { color: text }]}>
             {"What's the cheapest\noption near you?"}
           </Text>
-          <Text style={[styles.subhead, { color: c.textSec }]}>
+          <Text style={[styles.subhead, { color: textSec }]}>
             We find the best value — every time.
           </Text>
         </View>
 
         <TouchableOpacity
-          style={[styles.locationRow, { backgroundColor: c.bgSec, borderColor: c.border }]}
+          style={[styles.locationRow, { backgroundColor: bgSec, borderColor: border }]}
           onPress={handleLocationTap}
           accessibilityLabel={locating ? 'Detecting location' : `Current location: ${location}. Tap to change.`}
         >
           <Text style={styles.locationPin}>{locating ? '⌖' : '📍'}</Text>
-          <Text style={[styles.locationLabel, { color: c.textSec }]}>Near</Text>
-          <Text style={[styles.locationCity, { color: locating ? c.textTer : c.text }]}>
+          <Text style={[styles.locationLabel, { color: textSec }]}>Near</Text>
+          <Text style={[styles.locationCity, { color: locating ? textTer : text }]}>
             {locating ? 'Detecting…' : location}
           </Text>
-          {!locating && <Text style={[styles.chevron, { color: c.textTer }]}>›</Text>}
+          {!locating && <Text style={[styles.chevron, { color: textTer }]}>›</Text>}
         </TouchableOpacity>
 
         {/* Search bar */}
-        <View style={[styles.searchRow, { backgroundColor: c.bgSec, borderColor: c.border }]}>
+        <View style={[styles.searchRow, { backgroundColor: bgSec, borderColor: border }]}>
           <Text style={styles.searchIcon}>🔍</Text>
           <TextInput
             ref={searchInputRef}
-            style={[styles.searchInput, { color: c.text }]}
+            style={[styles.searchInput, { color: text }]}
             placeholder="Search for an item… e.g. avocados"
-            placeholderTextColor={c.textTer}
+            placeholderTextColor={textTer}
             value={searchQuery}
             onChangeText={setSearchQuery}
             returnKeyType="search"
@@ -207,7 +207,7 @@ export default function HomeScreen() {
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={{ color: c.textTer, fontSize: 16 }}>✕</Text>
+              <Text style={{ color: textTer, fontSize: 16 }}>✕</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -216,14 +216,14 @@ export default function HomeScreen() {
         {history.length > 0 && !searchQuery.trim() && (
           <View style={styles.historySection}>
             <View style={styles.historyHeader}>
-              <Text style={[styles.sectionLabel, { color: c.textTer, paddingHorizontal: 0 }]}>RECENT</Text>
+              <Text style={[styles.sectionLabel, { color: textTer, paddingHorizontal: 0 }]}>RECENT</Text>
               <TouchableOpacity onPress={() => {
                 Alert.alert('Clear history?', '', [
                   { text: 'Cancel', style: 'cancel' },
                   { text: 'Clear', style: 'destructive', onPress: () => history.forEach(e => removeHistory(e.query)) },
                 ]);
               }}>
-                <Text style={[styles.clearHistoryBtn, { color: c.textTer }]}>Clear</Text>
+                <Text style={[styles.clearHistoryBtn, { color: textTer }]}>Clear</Text>
               </TouchableOpacity>
             </View>
             <ScrollView
@@ -234,10 +234,10 @@ export default function HomeScreen() {
               {history.map((entry) => (
                 <TouchableOpacity
                   key={entry.query + entry.timestamp}
-                  style={[styles.historyChip, { backgroundColor: c.bgSec, borderColor: c.border }]}
+                  style={[styles.historyChip, { backgroundColor: bgSec, borderColor: border }]}
                   onPress={() => navigate(entry.query, entry.category as HomeCategory)}
                 >
-                  <Text style={[styles.historyChipText, { color: c.textSec }]} numberOfLines={1}>
+                  <Text style={[styles.historyChipText, { color: textSec }]} numberOfLines={1}>
                     🕐 {entry.query}
                   </Text>
                 </TouchableOpacity>
@@ -246,7 +246,7 @@ export default function HomeScreen() {
           </View>
         )}
 
-        <Text style={[styles.sectionLabel, { color: c.textTer }]}>
+        <Text style={[styles.sectionLabel, { color: textTer }]}>
           {searchQuery.trim() ? 'OR BROWSE BY CATEGORY' : 'HOW DO YOU WANT TO EAT?'}
         </Text>
 
@@ -259,8 +259,8 @@ export default function HomeScreen() {
                 style={[
                   styles.optionCard,
                   {
-                    backgroundColor: c.bg,
-                    borderColor: isSelected ? GREEN : c.border,
+                    backgroundColor: bg,
+                    borderColor: isSelected ? accent : border,
                     borderWidth: isSelected ? 2 : 0.5,
                   },
                 ]}
@@ -272,26 +272,26 @@ export default function HomeScreen() {
                   <Text style={styles.optionEmoji}>{opt.icon}</Text>
                 </View>
                 <View style={styles.optionText}>
-                  <Text style={[styles.optionTitle, { color: c.text }]}>{opt.title}</Text>
-                  <Text style={[styles.optionDesc, { color: c.textSec }]}>
+                  <Text style={[styles.optionTitle, { color: text }]}>{opt.title}</Text>
+                  <Text style={[styles.optionDesc, { color: textSec }]}>
                     {opt.description}
                   </Text>
                 </View>
-                <Text style={[styles.chevron, { color: c.textTer }]}>›</Text>
+                <Text style={[styles.chevron, { color: textTer }]}>›</Text>
               </TouchableOpacity>
             );
           })}
         </View>
       </ScrollView>
 
-      <View style={[styles.ctaWrap, { backgroundColor: c.bg }]}>
+      <View style={[styles.ctaWrap, { backgroundColor: bg }]}>
         <TouchableOpacity
-          style={[styles.cta, locating && { opacity: 0.5 }]}
+          style={[styles.cta, { backgroundColor: accent }, locating && { opacity: 0.5 }]}
           disabled={locating}
           onPress={() => navigate()}
           accessibilityRole="button"
         >
-          <Text style={styles.ctaText}>
+          <Text style={[styles.ctaText, { color: accentLight }]}>
             {searchQuery.trim() ? `🔍  Search "${searchQuery.trim()}"` : '🔍  Find cheap food'}
           </Text>
         </TouchableOpacity>
@@ -310,12 +310,13 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 6,
   },
+  topRowIcons: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  gearIcon: { fontSize: 20 },
   appLabel: {
     fontSize: 12,
     fontWeight: '500',
     letterSpacing: 1,
   },
-  profileIcon: { fontSize: 20 },
   headline: {
     fontSize: 26,
     fontWeight: '500',
@@ -400,11 +401,10 @@ const styles = StyleSheet.create({
     paddingTop: 12,
   },
   cta: {
-    backgroundColor: GREEN,
     borderRadius: 12,
     padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ctaText: { color: GREEN_LIGHT, fontSize: 16, fontWeight: '500' },
+  ctaText: { fontSize: 16, fontWeight: '500' },
 });

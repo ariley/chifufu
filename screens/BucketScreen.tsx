@@ -18,11 +18,9 @@ import * as Location from 'expo-location';
 import { useNavigation } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
 import { useBucketContext, useSavedRoutesContext } from '../App';
+import { useThemeContext } from '../contexts/ThemeContext';
 import { BucketItem } from '../types';
 import { shareCart } from '../utils/anthropic';
-
-const GREEN = '#1D9E75';
-const GREEN_LIGHT = '#E1F5EE';
 
 // Haversine distance in km
 function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -54,14 +52,7 @@ export default function BucketScreen() {
   const [sharing, setSharing] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
 
-  const c = {
-    bg: dark ? '#000000' : '#FFFFFF',
-    bgSec: dark ? '#1C1C1E' : '#F2F2F7',
-    text: dark ? '#FFFFFF' : '#000000',
-    textSec: dark ? '#ABABAB' : '#6C6C70',
-    textTer: dark ? '#636366' : '#AEAEB2',
-    border: dark ? '#38383A' : '#E5E5EA',
-  };
+  const { bg, bgSec, text, textSec, textTer, border, accent, accentLight } = useThemeContext();
 
   // Group items by store name
   const stores: StoreGroup[] = useMemo(() => {
@@ -181,19 +172,19 @@ export default function BucketScreen() {
 
   if (items.length === 0) {
     return (
-      <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]}>
+      <SafeAreaView style={[styles.safe, { backgroundColor: bg }]}>
         <StatusBar style={dark ? 'light' : 'dark'} />
-        <View style={[styles.nav, { borderBottomColor: c.border }]}>
+        <View style={[styles.nav, { borderBottomColor: border }]}>
           <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel="Back">
-            <Text style={styles.backChevron}>‹</Text>
+            <Text style={[styles.backChevron, { color: accent }]}>‹</Text>
           </TouchableOpacity>
-          <Text style={[styles.navTitle, { color: c.text }]}>My Route</Text>
+          <Text style={[styles.navTitle, { color: text }]}>My Route</Text>
           <View style={{ width: 28 }} />
         </View>
         <View style={styles.empty}>
           <Text style={styles.emptyIcon}>🗺️</Text>
-          <Text style={[styles.emptyTitle, { color: c.text }]}>Your route is empty</Text>
-          <Text style={[styles.emptySub, { color: c.textSec }]}>
+          <Text style={[styles.emptyTitle, { color: text }]}>Your route is empty</Text>
+          <Text style={[styles.emptySub, { color: textSec }]}>
             Tap + on any result to add stops, then navigate to all stores in one trip.
           </Text>
         </View>
@@ -202,14 +193,14 @@ export default function BucketScreen() {
   }
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: bg }]}>
       <StatusBar style={dark ? 'light' : 'dark'} />
 
-      <View style={[styles.nav, { backgroundColor: c.bg, borderBottomColor: c.border }]}>
+      <View style={[styles.nav, { backgroundColor: bg, borderBottomColor: border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel="Back">
           <Text style={styles.backChevron}>‹</Text>
         </TouchableOpacity>
-        <Text style={[styles.navTitle, { color: c.text }]}>
+        <Text style={[styles.navTitle, { color: text }]}>
           My Route · {count} {count === 1 ? 'item' : 'items'}
         </Text>
         <TouchableOpacity onPress={() => {
@@ -228,14 +219,14 @@ export default function BucketScreen() {
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={styles.storeSep} />}
         renderItem={({ item: store }) => (
-          <View style={[styles.storeCard, { backgroundColor: c.bgSec, borderColor: c.border }]}>
+          <View style={[styles.storeCard, { backgroundColor: bgSec, borderColor: border }]}>
             {/* Store header */}
             <View style={styles.storeHeader}>
               <Text style={styles.storeIcon}>🏪</Text>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.storeName, { color: c.text }]}>{store.storeName}</Text>
+                <Text style={[styles.storeName, { color: text }]}>{store.storeName}</Text>
                 {store.address && (
-                  <Text style={[styles.storeAddress, { color: c.textTer }]} numberOfLines={1}>
+                  <Text style={[styles.storeAddress, { color: textTer }]} numberOfLines={1}>
                     {store.address}
                   </Text>
                 )}
@@ -244,24 +235,24 @@ export default function BucketScreen() {
 
             {/* Items in this store */}
             {store.items.map((item) => (
-              <View key={item.id} style={[styles.itemRow, { borderTopColor: c.border }]}>
+              <View key={item.id} style={[styles.itemRow, { borderTopColor: border }]}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.itemName, { color: c.text }]} numberOfLines={1}>{item.description}</Text>
-                  <Text style={styles.itemPrice}>{item.price} each</Text>
+                  <Text style={[styles.itemName, { color: text }]} numberOfLines={1}>{item.description}</Text>
+                  <Text style={[styles.itemPrice, { color: accent }]}>{item.price} each</Text>
                 </View>
                 <View style={styles.qtyRow}>
                   <TouchableOpacity
-                    style={[styles.qtyBtn, { borderColor: c.border }]}
+                    style={[styles.qtyBtn, { borderColor: border }]}
                     onPress={() => setQuantity(item.id, item.quantity - 1)}
                   >
-                    <Text style={[styles.qtyBtnText, { color: c.text }]}>−</Text>
+                    <Text style={[styles.qtyBtnText, { color: text }]}>−</Text>
                   </TouchableOpacity>
-                  <Text style={[styles.qtyNum, { color: c.text }]}>{item.quantity}</Text>
+                  <Text style={[styles.qtyNum, { color: text }]}>{item.quantity}</Text>
                   <TouchableOpacity
-                    style={[styles.qtyBtn, { borderColor: c.border }]}
+                    style={[styles.qtyBtn, { borderColor: border }]}
                     onPress={() => setQuantity(item.id, item.quantity + 1)}
                   >
-                    <Text style={[styles.qtyBtnText, { color: GREEN }]}>+</Text>
+                    <Text style={[styles.qtyBtnText, { color: accent }]}>+</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -270,18 +261,18 @@ export default function BucketScreen() {
         )}
         ListFooterComponent={
           <View style={styles.totalRow}>
-            <Text style={[styles.totalLabel, { color: c.textSec }]}>Estimated total</Text>
-            <Text style={styles.totalAmount}>
+            <Text style={[styles.totalLabel, { color: textSec }]}>Estimated total</Text>
+            <Text style={[styles.totalAmount, { color: accent }]}>
               ${stores.flatMap(s => s.items).reduce((sum, i) => sum + i.priceValue * i.quantity, 0).toFixed(2)}
             </Text>
           </View>
         }
       />
 
-      <View style={[styles.ctaWrap, { backgroundColor: c.bg }]}>
+      <View style={[styles.ctaWrap, { backgroundColor: bg }]}>
         <View style={styles.ctaRow}>
           <TouchableOpacity
-            style={[styles.secondaryBtn, { borderColor: c.border }]}
+            style={[styles.secondaryBtn, { borderColor: border }]}
             onPress={() => {
               Alert.prompt(
                 'Save Route',
@@ -298,49 +289,49 @@ export default function BucketScreen() {
             }}
             accessibilityRole="button"
           >
-            <Text style={[styles.secondaryBtnText, { color: c.textSec }]}>💾  Save</Text>
+            <Text style={[styles.secondaryBtnText, { color: textSec }]}>💾  Save</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.secondaryBtn, { borderColor: c.border }]}
+            style={[styles.secondaryBtn, { borderColor: border }]}
             onPress={() => setShowSaved(true)}
             accessibilityRole="button"
           >
-            <Text style={[styles.secondaryBtnText, { color: c.textSec }]}>
+            <Text style={[styles.secondaryBtnText, { color: textSec }]}>
               📂  Saved{savedRoutes.length > 0 ? ` (${savedRoutes.length})` : ''}
             </Text>
           </TouchableOpacity>
         </View>
         <TouchableOpacity
-          style={[styles.shareBtn, { borderColor: GREEN }]}
+          style={[styles.shareBtn, { borderColor: accent }]}
           onPress={handleShare}
           disabled={sharing}
           accessibilityRole="button"
         >
           {sharing
-            ? <ActivityIndicator size="small" color={GREEN} />
-            : <Text style={[styles.shareBtnText, { color: GREEN }]}>↑  Share Route with a Friend</Text>
+            ? <ActivityIndicator size="small" color={accent} />
+            : <Text style={[styles.shareBtnText, { color: accent }]}>↑  Share Route with a Friend</Text>
           }
         </TouchableOpacity>
-        <TouchableOpacity style={styles.cta} onPress={buildRoute} accessibilityRole="button">
-          <Text style={styles.ctaText}>🗺️  Navigate — {stores.length} {stores.length === 1 ? 'stop' : 'stops'}</Text>
+        <TouchableOpacity style={[styles.cta, { backgroundColor: accent }]} onPress={buildRoute} accessibilityRole="button">
+          <Text style={[styles.ctaText, { color: accentLight }]}>🗺️  Navigate — {stores.length} {stores.length === 1 ? 'stop' : 'stops'}</Text>
         </TouchableOpacity>
       </View>
 
       {/* Saved Routes modal */}
       <Modal visible={showSaved} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowSaved(false)}>
-        <SafeAreaView style={[styles.safe, { backgroundColor: c.bg }]}>
-          <View style={[styles.nav, { borderBottomColor: c.border }]}>
+        <SafeAreaView style={[styles.safe, { backgroundColor: bg }]}>
+          <View style={[styles.nav, { borderBottomColor: border }]}>
             <View style={{ width: 28 }} />
-            <Text style={[styles.navTitle, { color: c.text }]}>Saved Routes</Text>
+            <Text style={[styles.navTitle, { color: text }]}>Saved Routes</Text>
             <TouchableOpacity onPress={() => setShowSaved(false)}>
-              <Text style={[styles.clearBtn, { color: GREEN }]}>Done</Text>
+              <Text style={[styles.clearBtn, { color: accent }]}>Done</Text>
             </TouchableOpacity>
           </View>
           {savedRoutes.length === 0 ? (
             <View style={styles.empty}>
               <Text style={styles.emptyIcon}>📂</Text>
-              <Text style={[styles.emptyTitle, { color: c.text }]}>No saved routes</Text>
-              <Text style={[styles.emptySub, { color: c.textSec }]}>Tap 💾 Save to keep a route for later.</Text>
+              <Text style={[styles.emptyTitle, { color: text }]}>No saved routes</Text>
+              <Text style={[styles.emptySub, { color: textSec }]}>Tap 💾 Save to keep a route for later.</Text>
             </View>
           ) : (
             <FlatList
@@ -348,11 +339,11 @@ export default function BucketScreen() {
               keyExtractor={(r) => r.id}
               contentContainerStyle={{ padding: 16, gap: 10 }}
               renderItem={({ item: r }) => (
-                <View style={[styles.savedRouteCard, { backgroundColor: c.bgSec, borderColor: c.border }]}>
+                <View style={[styles.savedRouteCard, { backgroundColor: bgSec, borderColor: border }]}>
                   <View style={styles.savedRouteHeader}>
                     <View style={{ flex: 1 }}>
-                      <Text style={[styles.savedRouteName, { color: c.text }]}>{r.name}</Text>
-                      <Text style={[styles.savedRouteMeta, { color: c.textTer }]}>
+                      <Text style={[styles.savedRouteName, { color: text }]}>{r.name}</Text>
+                      <Text style={[styles.savedRouteMeta, { color: textTer }]}>
                         {r.items.length} item{r.items.length !== 1 ? 's' : ''} · {new Date(r.savedAt).toLocaleDateString()}
                       </Text>
                     </View>
@@ -369,7 +360,7 @@ export default function BucketScreen() {
                     </TouchableOpacity>
                   </View>
                   <TouchableOpacity
-                    style={[styles.loadRouteBtn, { backgroundColor: GREEN }]}
+                    style={[styles.loadRouteBtn, { backgroundColor: accent }]}
                     onPress={() => {
                       Alert.alert(
                         'Load route?',
@@ -402,7 +393,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: 0.5,
   },
-  backChevron: { fontSize: 28, color: GREEN, lineHeight: 32, marginRight: 8 },
+  backChevron: { fontSize: 28, lineHeight: 32, marginRight: 8 },
   navTitle: { flex: 1, fontSize: 16, fontWeight: '500' },
   clearBtn: { fontSize: 14 },
   list: { padding: 16, gap: 0, paddingBottom: 24 },
@@ -430,7 +421,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   itemName: { fontSize: 14, marginBottom: 2 },
-  itemPrice: { fontSize: 12, color: GREEN, fontWeight: '500' },
+  itemPrice: { fontSize: 12, fontWeight: '500' },
   qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   qtyBtn: {
     width: 28, height: 28,
@@ -447,7 +438,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   totalLabel: { fontSize: 14 },
-  totalAmount: { fontSize: 20, fontWeight: '600', color: GREEN },
+  totalAmount: { fontSize: 20, fontWeight: '600' },
   ctaWrap: { paddingHorizontal: 24, paddingBottom: 32, paddingTop: 12, gap: 10 },
   ctaRow: { flexDirection: 'row', gap: 10 },
   secondaryBtn: {
@@ -474,10 +465,10 @@ const styles = StyleSheet.create({
   },
   shareBtnText: { fontSize: 15, fontWeight: '500' },
   cta: {
-    backgroundColor: GREEN, borderRadius: 12,
+    borderRadius: 12,
     padding: 16, alignItems: 'center',
   },
-  ctaText: { color: GREEN_LIGHT, fontSize: 16, fontWeight: '500' },
+  ctaText: { fontSize: 16, fontWeight: '500' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8 },
   emptyIcon: { fontSize: 52, marginBottom: 8 },
   emptyTitle: { fontSize: 18, fontWeight: '600', textAlign: 'center' },
