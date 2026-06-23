@@ -8,18 +8,12 @@ import {
   View,
 } from 'react-native';
 import { useSavedContext } from '../App';
-import { BadgeKey, ResultItem } from '../types';
+import { GroceryItem } from '../types';
 
-const GREEN = '#1D9E75';
-
-const BADGE_CONFIG: Record<BadgeKey, { bg: string; color: string; label: string }> = {
-  deal: { bg: '#EAF3DE', color: '#3B6D11', label: 'Best deal' },
-  fast: { bg: '#E6F1FB', color: '#185FA5', label: 'Fast' },
-  close: { bg: '#FAEEDA', color: '#854F0B', label: 'Nearby' },
-};
+const SALE_GREEN = '#1D9E75';
 
 interface Props {
-  onSelectItem: (item: ResultItem) => void;
+  onSelectItem?: (item: GroceryItem) => void;
 }
 
 export default function SavedScreen({ onSelectItem }: Props) {
@@ -42,7 +36,7 @@ export default function SavedScreen({ onSelectItem }: Props) {
     return (
       <View style={[styles.empty, { backgroundColor: c.bg }]}>
         <Text style={styles.emptyIcon}>♡</Text>
-        <Text style={[styles.emptyTitle, { color: c.text }]}>No saved deals yet</Text>
+        <Text style={[styles.emptyTitle, { color: c.text }]}>No saved items yet</Text>
         <Text style={[styles.emptySub, { color: c.textSec }]}>
           Tap the heart on any result to save it here.
         </Text>
@@ -50,16 +44,16 @@ export default function SavedScreen({ onSelectItem }: Props) {
     );
   }
 
-  function renderCard({ item }: { item: ResultItem }) {
+  function renderCard({ item }: { item: GroceryItem }) {
     return (
       <TouchableOpacity
         style={[styles.card, { backgroundColor: c.bg, borderColor: c.border }]}
-        onPress={() => onSelectItem(item)}
+        onPress={() => onSelectItem?.(item)}
         accessibilityRole="button"
       >
         <View style={styles.cardHeader}>
           <Text style={[styles.cardName, { color: c.text }]} numberOfLines={1}>
-            {item.name}
+            {item.brand ? `${item.brand} ` : ''}{item.name}
           </Text>
           <View style={styles.cardRight}>
             <Text style={styles.cardPrice}>{item.price}</Text>
@@ -73,20 +67,14 @@ export default function SavedScreen({ onSelectItem }: Props) {
           </View>
         </View>
         <Text style={[styles.cardSub, { color: c.textSec }]} numberOfLines={1}>
-          {item.description}
+          {item.size}
         </Text>
-        <View style={styles.cardMeta}>
-          {item.badges.map((b) => {
-            const cfg = BADGE_CONFIG[b];
-            if (!cfg) return null;
-            return (
-              <View key={b} style={[styles.badge, { backgroundColor: cfg.bg }]}>
-                <Text style={[styles.badgeText, { color: cfg.color }]}>{cfg.label}</Text>
-              </View>
-            );
-          })}
-          <Text style={[styles.dist, { color: c.textTer }]}>📍 {item.distance}</Text>
-        </View>
+        {item.onSale && (
+          <View style={styles.saleBadge}>
+            <Text style={styles.saleBadgeText}>SALE</Text>
+            {item.savings ? <Text style={styles.savingsText}>{item.savings}</Text> : null}
+          </View>
+        )}
       </TouchableOpacity>
     );
   }
@@ -100,7 +88,7 @@ export default function SavedScreen({ onSelectItem }: Props) {
       ItemSeparatorComponent={() => <View style={styles.separator} />}
       ListHeaderComponent={
         <Text style={[styles.sectionSep, { color: c.textTer }]}>
-          {saved.length} SAVED {saved.length === 1 ? 'DEAL' : 'DEALS'}
+          {saved.length} SAVED {saved.length === 1 ? 'ITEM' : 'ITEMS'}
         </Text>
       }
     />
@@ -139,16 +127,19 @@ const styles = StyleSheet.create({
   },
   cardName: { fontSize: 15, fontWeight: '500', flex: 1, marginRight: 6 },
   cardRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  cardPrice: { fontSize: 16, fontWeight: '500', color: GREEN },
+  cardPrice: { fontSize: 16, fontWeight: '500', color: SALE_GREEN },
   heartFilled: { fontSize: 18, color: '#FF3B30' },
   cardSub: { fontSize: 12, marginBottom: 6 },
-  cardMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
+  saleBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  saleBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+    backgroundColor: SALE_GREEN,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
   },
-  badge: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
-  badgeText: { fontSize: 11 },
-  dist: { fontSize: 11 },
+  savingsText: { fontSize: 11, color: SALE_GREEN, fontWeight: '500' },
 });

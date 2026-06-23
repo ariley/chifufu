@@ -72,7 +72,7 @@ export default function AuthScreen() {
       const { error: authError } = await signIn(trimmedEmail, trimmedPassword);
       setLoading(false);
       if (authError) {
-        setError(authError.message);
+        setError(authError);
       } else {
         navigation.navigate('Home');
       }
@@ -80,7 +80,7 @@ export default function AuthScreen() {
       const { error: authError } = await signUp(trimmedEmail, trimmedPassword);
       setLoading(false);
       if (authError) {
-        setError(authError.message);
+        setError(authError);
       } else {
         setVerifyMessage(true);
       }
@@ -95,7 +95,15 @@ export default function AuthScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <View style={styles.container}>
-          {/* Header */}
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            accessibilityLabel="Back"
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          >
+            <Text style={[styles.backChevron, { color: GREEN }]}>‹</Text>
+          </TouchableOpacity>
+
           <Text style={[styles.appLabel, { color: c.textTer }]}>CHIFUFU</Text>
           <Text style={[styles.headline, { color: c.text }]}>
             {tab === 'signin' ? 'Welcome back' : 'Create account'}
@@ -106,7 +114,6 @@ export default function AuthScreen() {
               : 'Save your items and routes across devices.'}
           </Text>
 
-          {/* Tabs */}
           <View style={[styles.tabs, { backgroundColor: c.bgSec, borderColor: c.border }]}>
             <TouchableOpacity
               style={[styles.tab, tab === 'signin' && styles.tabActive]}
@@ -126,7 +133,6 @@ export default function AuthScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Verify message */}
           {verifyMessage && (
             <View style={styles.verifyBox}>
               <Text style={styles.verifyIcon}>✉️</Text>
@@ -136,12 +142,10 @@ export default function AuthScreen() {
             </View>
           )}
 
-          {/* Error */}
           {!!error && (
             <Text style={styles.errorText}>{error}</Text>
           )}
 
-          {/* Inputs */}
           <View style={[styles.inputWrap, { backgroundColor: c.bgSec, borderColor: c.border }]}>
             <TextInput
               style={[styles.input, { color: c.text, borderBottomColor: c.border }]}
@@ -169,7 +173,6 @@ export default function AuthScreen() {
             />
           </View>
 
-          {/* Submit button */}
           <TouchableOpacity
             style={[styles.btn, loading && styles.btnDisabled]}
             onPress={handleSubmit}
@@ -185,7 +188,6 @@ export default function AuthScreen() {
             )}
           </TouchableOpacity>
 
-          {/* Guest link */}
           <TouchableOpacity
             style={styles.guestBtn}
             onPress={() => navigation.navigate('Home')}
@@ -201,40 +203,14 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   flex: { flex: 1 },
-  container: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 32,
-  },
-  appLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  headline: {
-    fontSize: 26,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  subhead: {
-    fontSize: 14,
-    marginBottom: 28,
-    lineHeight: 20,
-  },
-  tabs: {
-    flexDirection: 'row',
-    borderRadius: 10,
-    borderWidth: 0.5,
-    marginBottom: 20,
-    padding: 3,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
+  container: { flex: 1, paddingHorizontal: 24, paddingTop: 16 },
+  backBtn: { marginBottom: 8, alignSelf: 'flex-start' },
+  backChevron: { fontSize: 36, lineHeight: 40, fontWeight: '300' },
+  appLabel: { fontSize: 12, fontWeight: '500', letterSpacing: 1, marginBottom: 8 },
+  headline: { fontSize: 26, fontWeight: '600', marginBottom: 6 },
+  subhead: { fontSize: 14, marginBottom: 28, lineHeight: 20 },
+  tabs: { flexDirection: 'row', borderRadius: 10, borderWidth: 0.5, marginBottom: 20, padding: 3 },
+  tab: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
   tabActive: {
     backgroundColor: '#FFFFFF',
     shadowColor: '#000',
@@ -243,10 +219,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     elevation: 2,
   },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
+  tabText: { fontSize: 14, fontWeight: '500' },
   verifyBox: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -257,33 +230,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   verifyIcon: { fontSize: 18, marginTop: 1 },
-  verifyText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#1D9E75',
-    lineHeight: 20,
-  },
-  errorText: {
-    color: RED,
-    fontSize: 13,
-    marginBottom: 12,
-    lineHeight: 18,
-  },
-  inputWrap: {
-    borderRadius: 12,
-    borderWidth: 0.5,
-    marginBottom: 16,
-    overflow: 'hidden',
-  },
-  input: {
-    fontSize: 15,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 0.5,
-  },
-  inputLast: {
-    borderBottomWidth: 0,
-  },
+  verifyText: { flex: 1, fontSize: 14, color: '#1D9E75', lineHeight: 20 },
+  errorText: { color: RED, fontSize: 13, marginBottom: 12, lineHeight: 18 },
+  inputWrap: { borderRadius: 12, borderWidth: 0.5, marginBottom: 16, overflow: 'hidden' },
+  input: { fontSize: 15, paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 0.5 },
+  inputLast: { borderBottomWidth: 0 },
   btn: {
     backgroundColor: GREEN,
     borderRadius: 12,
@@ -294,16 +245,7 @@ const styles = StyleSheet.create({
     minHeight: 52,
   },
   btnDisabled: { opacity: 0.6 },
-  btnText: {
-    color: GREEN_LIGHT,
-    fontSize: 16,
-    fontWeight: '500',
-  },
-  guestBtn: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  guestText: {
-    fontSize: 14,
-  },
+  btnText: { color: GREEN_LIGHT, fontSize: 16, fontWeight: '500' },
+  guestBtn: { alignItems: 'center', paddingVertical: 12 },
+  guestText: { fontSize: 14 },
 });

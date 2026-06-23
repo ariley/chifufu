@@ -10,11 +10,10 @@ import {
 } from 'react-native';
 import MapView, { Callout, Marker, Region } from 'react-native-maps';
 import * as Location from 'expo-location';
-import { ResultItem } from '../types';
+import { GroceryItem } from '../types';
 
 const GREEN = '#1D9E75';
 
-// Oakland, CA fallback so the map always has a sensible center
 const FALLBACK_REGION: Region = {
   latitude: 37.8044,
   longitude: -122.2712,
@@ -23,12 +22,14 @@ const FALLBACK_REGION: Region = {
 };
 
 interface Props {
-  results: ResultItem[];
-  location: string;
-  onSelectItem: (item: ResultItem) => void;
+  results: GroceryItem[];
+  locationName: string;
+  storeLat?: number;
+  storeLng?: number;
+  onSelectItem: (item: GroceryItem) => void;
 }
 
-export default function ResultsMap({ results, location, onSelectItem }: Props) {
+export default function ResultsMap({ results, locationName, storeLat, storeLng, onSelectItem }: Props) {
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
   const mapRef = useRef<MapView>(null);
@@ -40,19 +41,18 @@ export default function ResultsMap({ results, location, onSelectItem }: Props) {
     initLocation();
   }, []);
 
-  // When results arrive with coordinates, fit the map to show all markers
   useEffect(() => {
-    const pins = results.filter((r) => r.lat != null && r.lng != null);
-    if (pins.length > 0 && mapRef.current) {
-      mapRef.current.fitToCoordinates(
-        pins.map((r) => ({ latitude: r.lat!, longitude: r.lng! })),
-        { edgePadding: { top: 80, right: 40, bottom: 80, left: 40 }, animated: true },
-      );
+    if (storeLat != null && storeLng != null && mapRef.current) {
+      mapRef.current.animateToRegion({
+        latitude: storeLat,
+        longitude: storeLng,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      });
     }
-  }, [results]);
+  }, [storeLat, storeLng]);
 
   async function initLocation() {
-    // 1. Try device GPS first
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status === 'granted') {
       try {
@@ -68,9 +68,8 @@ export default function ResultsMap({ results, location, onSelectItem }: Props) {
       } catch (_) {}
     }
 
-    // 2. Fall back to geocoding the location string
     try {
-      const [geo] = await Location.geocodeAsync(location);
+      const [geo] = await Location.geocodeAsync(locationName);
       if (geo) {
         setRegion({
           latitude: geo.latitude,
@@ -90,8 +89,6 @@ export default function ResultsMap({ results, location, onSelectItem }: Props) {
     calloutBorder: dark ? '#38383A' : '#E5E5EA',
   };
 
-  const pins = results.filter((r) => r.lat != null && r.lng != null);
-
   return (
     <View style={styles.container}>
       {!locationReady && (
@@ -110,42 +107,14 @@ export default function ResultsMap({ results, location, onSelectItem }: Props) {
         loadingEnabled
         loadingIndicatorColor={GREEN}
       >
-        {pins.map((item, index) => (
+        {storeLat != null && storeLng != null && (
           <Marker
-            key={item.id}
-            coordinate={{ latitude: item.lat!, longitude: item.lng! }}
-            pinColor={index === 0 ? GREEN : '#FF3B30'}
-          >
-            <Callout onPress={() => onSelectItem(item)} tooltip={false}>
-              <View
-                style={[
-                  styles.callout,
-                  { backgroundColor: c.calloutBg, borderColor: c.calloutBorder },
-                ]}
-              >
-                <Text style={[styles.calloutName, { color: c.calloutText }]} numberOfLines={1}>
-                  {item.name}
-                </Text>
-                <Text style={styles.calloutPrice}>{item.price}</Text>
-                <Text style={[styles.calloutDesc, { color: c.calloutSub }]} numberOfLines={1}>
-                  {item.description}
-                </Text>
-                <Text style={styles.calloutCta}>View details →</Text>
-              </View>
-            </Callout>
-          </Marker>
-        ))}
+            coordinate={{ latitude: storeLat, longitude: storeLng }}
+            pinColor={GREEN}
+          />
+        )}
       </MapView>
 
-      {pins.length === 0 && locationReady && results.length > 0 && (
-        <View style={styles.noCoordsBanner}>
-          <Text style={styles.noCoordsText}>
-            📍 Results loaded — no map pins yet (addresses couldn't be geocoded)
-          </Text>
-        </View>
-      )}
-
-      {/* Recenter button */}
       <TouchableOpacity
         style={[styles.recenterBtn, { backgroundColor: c.calloutBg, borderColor: c.calloutBorder }]}
         onPress={initLocation}
@@ -167,26 +136,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 10,
   },
-  callout: {
-    width: 200,
-    padding: 10,
-    borderRadius: 10,
-    borderWidth: 0.5,
-  },
-  calloutName: { fontSize: 14, fontWeight: '600', marginBottom: 2 },
-  calloutPrice: { fontSize: 14, fontWeight: '600', color: GREEN, marginBottom: 2 },
-  calloutDesc: { fontSize: 12, marginBottom: 6 },
-  calloutCta: { fontSize: 12, color: GREEN, fontWeight: '500' },
-  noCoordsBanner: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    borderRadius: 10,
-    padding: 10,
-  },
-  noCoordsText: { color: '#FFF', fontSize: 12, textAlign: 'center' },
   recenterBtn: {
     position: 'absolute',
     top: 12,

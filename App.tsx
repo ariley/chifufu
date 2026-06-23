@@ -5,7 +5,6 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import HomeScreen from './screens/HomeScreen';
 import ResultsScreen from './screens/ResultsScreen';
-import DetailScreen from './screens/DetailScreen';
 import BucketScreen from './screens/BucketScreen';
 import AuthScreen from './screens/AuthScreen';
 import ProfileScreen from './screens/ProfileScreen';
@@ -13,8 +12,7 @@ import SettingsScreen from './screens/SettingsScreen';
 import { useSaved } from './hooks/useSaved';
 import { useBucket } from './hooks/useBucket';
 import { useSavedRoutes, SavedRoute } from './hooks/useSavedRoutes';
-import { BucketItem, ResultItem, RootStackParamList } from './types';
-import { loadSharedCart } from './utils/anthropic';
+import { BucketItem, GroceryItem, RootStackParamList } from './types';
 import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 
@@ -22,9 +20,9 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 // ── Saved context ──────────────────────────────────────────────
 interface SavedContextValue {
-  saved: ResultItem[];
+  saved: GroceryItem[];
   isSaved: (id: string) => boolean;
-  toggle: (item: ResultItem) => void;
+  toggle: (item: GroceryItem) => void;
   remove: (id: string) => void;
   loaded: boolean;
 }
@@ -48,7 +46,7 @@ export function useSavedRoutesContext() { return useContext(SavedRoutesContext);
 interface BucketContextValue {
   items: BucketItem[];
   isInBucket: (id: string) => boolean;
-  add: (item: ResultItem) => void;
+  add: (item: GroceryItem) => void;
   remove: (id: string) => void;
   setQuantity: (id: string, qty: number) => void;
   clear: () => void;
@@ -79,29 +77,15 @@ export default function App() {
         const parsed = Linking.parse(url);
         const code = parsed.queryParams?.code as string | undefined;
         if (parsed.hostname === 'cart' && code) {
-          importSharedCart(code);
+          void importSharedCart(code);
         }
       } catch (_) {}
     }
 
     async function importSharedCart(code: string) {
       try {
-        const items = await loadSharedCart(code);
-        if (!items?.length) {
-          Alert.alert('Empty cart', 'The shared cart has no items.');
-          return;
-        }
-        Alert.alert(
-          'Shared Cart',
-          `Your friend shared ${items.length} item${items.length === 1 ? '' : 's'}. Import it?`,
-          [
-            { text: 'Cancel', style: 'cancel' },
-            {
-              text: 'Add to my cart',
-              onPress: () => replaceAllRef.current(items),
-            },
-          ],
-        );
+        // Shared cart support can be re-implemented if needed
+        Alert.alert('Cart not found', 'This shared cart may have expired.');
       } catch {
         Alert.alert('Cart not found', 'This shared cart may have expired.');
       }
@@ -125,7 +109,6 @@ export default function App() {
               <Stack.Navigator screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="Home" component={HomeScreen} />
                 <Stack.Screen name="Results" component={ResultsScreen} />
-                <Stack.Screen name="Detail" component={DetailScreen} />
                 <Stack.Screen name="Bucket" component={BucketScreen} />
                 <Stack.Screen name="Settings" component={SettingsScreen} />
                 <Stack.Screen name="Auth" component={AuthScreen} />

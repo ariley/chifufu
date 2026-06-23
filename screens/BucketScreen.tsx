@@ -1,13 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Linking,
   Modal,
   Platform,
   SafeAreaView,
-  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -20,7 +18,6 @@ import { StatusBar } from 'expo-status-bar';
 import { useBucketContext, useSavedRoutesContext } from '../App';
 import { useThemeContext } from '../contexts/ThemeContext';
 import { BucketItem } from '../types';
-import { shareCart } from '../utils/anthropic';
 
 // Haversine distance in km
 function haversine(lat1: number, lng1: number, lat2: number, lng2: number): number {
@@ -37,9 +34,8 @@ function haversine(lat1: number, lng1: number, lat2: number, lng2: number): numb
 
 interface StoreGroup {
   storeName: string;
-  address?: string;
-  lat?: number;
-  lng?: number;
+  storeId: string;
+  storeAddress?: string;
   items: BucketItem[];
 }
 
@@ -49,36 +45,40 @@ export default function BucketScreen() {
   const { routes: savedRoutes, save: saveRoute, remove: removeSavedRoute } = useSavedRoutesContext();
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
-  const [sharing, setSharing] = useState(false);
   const [showSaved, setShowSaved] = useState(false);
 
   const { bg, bgSec, text, textSec, textTer, border, accent, accentLight } = useThemeContext();
 
-  // Group items by store name
+  // Group items by store
   const stores: StoreGroup[] = useMemo(() => {
     const map = new Map<string, StoreGroup>();
     for (const item of items) {
-      const key = item.name;
+      const key = item.storeId ?? item.storeName ?? 'unknown';
       if (!map.has(key)) {
-        map.set(key, { storeName: item.name, address: item.address, lat: item.lat, lng: item.lng, items: [] });
+        map.set(key, {
+          storeName: item.storeName ?? 'Store',
+          storeId: key,
+          storeAddress: item.storeAddress,
+          items: [],
+        });
       }
       map.get(key)!.items.push(item);
     }
     return Array.from(map.values());
   }, [items]);
 
+  const total = items.reduce((sum, i) => sum + i.priceValue * i.quantity, 0);
+
   async function buildRoute() {
     if (stores.length === 0) return;
 
-    const withCoords = stores.filter((s) => s.lat != null && s.lng != null);
-    const withAddress = stores.filter((s) => s.address);
-
-    if (withAddress.length === 0 && withCoords.length === 0) {
-      Alert.alert('No locations', 'None of your route stops have addresses for navigation.');
+    const withAddress = stores.filter((s) => s.storeAddress);
+    if (withAddress.length === 0) {
+      Alert.alert('No locations', 'None of your list items have store addresses.');
       return;
     }
 
-    let orderedStores = withAddress.length > 0 ? withAddress : withCoords;
+    let orderedStores = withAddress;
     let userLat: number | null = null;
     let userLng: number | null = null;
 
@@ -88,28 +88,10 @@ export default function BucketScreen() {
         const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         userLat = pos.coords.latitude;
         userLng = pos.coords.longitude;
-        const remaining = [...orderedStores.filter((s) => s.lat != null && s.lng != null)];
-        const sorted: StoreGroup[] = [];
-        let curLat = userLat, curLng = userLng;
-
-        while (remaining.length > 0) {
-          let nearest = 0;
-          let nearestDist = Infinity;
-          remaining.forEach((s, i) => {
-            const d = haversine(curLat, curLng, s.lat!, s.lng!);
-            if (d < nearestDist) { nearestDist = d; nearest = i; }
-          });
-          sorted.push(remaining.splice(nearest, 1)[0]);
-          curLat = sorted[sorted.length - 1].lat!;
-          curLng = sorted[sorted.length - 1].lng!;
-        }
-
-        const noCoords = orderedStores.filter((s) => s.lat == null || s.lng == null);
-        orderedStores = [...sorted, ...noCoords];
       } catch (_) {}
     }
 
-    const encoded = orderedStores.map((s) => encodeURIComponent(s.address ?? s.storeName));
+    const encoded = orderedStores.map((s) => encodeURIComponent(s.storeAddress ?? s.storeName));
     const saddrCoord = userLat != null ? `${userLat},${userLng}` : '';
 
     function openGoogleMaps() {
@@ -130,9 +112,10 @@ export default function BucketScreen() {
     }
 
     if (Platform.OS === 'ios') {
-      const subtitle = orderedStores.length > 1
-        ? 'Google Maps supports all stops. Apple Maps navigates to the first stop only.'
-        : '';
+      const subtitle =
+        orderedStores.length > 1
+          ? 'Google Maps supports all stops. Apple Maps navigates to the first stop only.'
+          : '';
       Alert.alert('Navigate with…', subtitle, [
         { text: 'Google Maps', onPress: openGoogleMaps },
         { text: 'Apple Maps', onPress: openAppleMaps },
@@ -140,33 +123,6 @@ export default function BucketScreen() {
       ]);
     } else {
       openGoogleMaps();
-    }
-  }
-
-  async function handleShare() {
-    if (items.length === 0) return;
-    setSharing(true);
-    try {
-      const { webUrl, code } = await shareCart(items);
-
-      // Build a readable text list
-      const lines: string[] = ['🗺️ My Chifufu route:\n'];
-      for (const store of stores) {
-        lines.push(`🏪 ${store.storeName}`);
-        for (const item of store.items) {
-          lines.push(`  • ${item.description} ×${item.quantity} — ${item.price} each`);
-        }
-        lines.push('');
-      }
-      const total = stores.flatMap(s => s.items).reduce((sum, i) => sum + i.priceValue * i.quantity, 0);
-      lines.push(`Estimated total: $${total.toFixed(2)}`);
-      lines.push(`\nOpen in Chifufu app: ${webUrl}`);
-
-      await Share.share({ message: lines.join('\n'), url: webUrl });
-    } catch {
-      Alert.alert('Could not share', 'Make sure you are connected to the internet and try again.');
-    } finally {
-      setSharing(false);
     }
   }
 
@@ -178,14 +134,14 @@ export default function BucketScreen() {
           <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel="Back">
             <Text style={[styles.backChevron, { color: accent }]}>‹</Text>
           </TouchableOpacity>
-          <Text style={[styles.navTitle, { color: text }]}>My Route</Text>
+          <Text style={[styles.navTitle, { color: text }]}>My List</Text>
           <View style={{ width: 28 }} />
         </View>
         <View style={styles.empty}>
-          <Text style={styles.emptyIcon}>🗺️</Text>
-          <Text style={[styles.emptyTitle, { color: text }]}>Your route is empty</Text>
+          <Text style={styles.emptyIcon}>🛒</Text>
+          <Text style={[styles.emptyTitle, { color: text }]}>Your list is empty</Text>
           <Text style={[styles.emptySub, { color: textSec }]}>
-            Tap + on any result to add stops, then navigate to all stores in one trip.
+            Search for groceries and tap "Add to list" to build your shopping list.
           </Text>
         </View>
       </SafeAreaView>
@@ -198,24 +154,26 @@ export default function BucketScreen() {
 
       <View style={[styles.nav, { backgroundColor: bg, borderBottomColor: border }]}>
         <TouchableOpacity onPress={() => navigation.goBack()} accessibilityLabel="Back">
-          <Text style={styles.backChevron}>‹</Text>
+          <Text style={[styles.backChevron, { color: accent }]}>‹</Text>
         </TouchableOpacity>
         <Text style={[styles.navTitle, { color: text }]}>
-          My Route · {count} {count === 1 ? 'item' : 'items'}
+          My List · {count} {count === 1 ? 'item' : 'items'}
         </Text>
-        <TouchableOpacity onPress={() => {
-          Alert.alert('Clear route?', 'This will remove all stops.', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Clear', style: 'destructive', onPress: clear },
-          ]);
-        }}>
+        <TouchableOpacity
+          onPress={() => {
+            Alert.alert('Clear list?', 'This will remove all items.', [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Clear', style: 'destructive', onPress: clear },
+            ]);
+          }}
+        >
           <Text style={[styles.clearBtn, { color: '#FF3B30' }]}>Clear</Text>
         </TouchableOpacity>
       </View>
 
       <FlatList
         data={stores}
-        keyExtractor={(s) => s.storeName}
+        keyExtractor={(s) => s.storeId}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={styles.storeSep} />}
         renderItem={({ item: store }) => (
@@ -225,11 +183,11 @@ export default function BucketScreen() {
               <Text style={styles.storeIcon}>🏪</Text>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.storeName, { color: text }]}>{store.storeName}</Text>
-                {store.address && (
+                {store.storeAddress ? (
                   <Text style={[styles.storeAddress, { color: textTer }]} numberOfLines={1}>
-                    {store.address}
+                    {store.storeAddress}
                   </Text>
-                )}
+                ) : null}
               </View>
             </View>
 
@@ -237,7 +195,12 @@ export default function BucketScreen() {
             {store.items.map((item) => (
               <View key={item.id} style={[styles.itemRow, { borderTopColor: border }]}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.itemName, { color: text }]} numberOfLines={1}>{item.description}</Text>
+                  <Text style={[styles.itemName, { color: text }]} numberOfLines={2}>
+                    {item.brand ? `${item.brand} ` : ''}{item.name}
+                  </Text>
+                  <Text style={[styles.itemSize, { color: textTer }]} numberOfLines={1}>
+                    {item.size}
+                  </Text>
                   <Text style={[styles.itemPrice, { color: accent }]}>{item.price} each</Text>
                 </View>
                 <View style={styles.qtyRow}>
@@ -262,9 +225,7 @@ export default function BucketScreen() {
         ListFooterComponent={
           <View style={styles.totalRow}>
             <Text style={[styles.totalLabel, { color: textSec }]}>Estimated total</Text>
-            <Text style={[styles.totalAmount, { color: accent }]}>
-              ${stores.flatMap(s => s.items).reduce((sum, i) => sum + i.priceValue * i.quantity, 0).toFixed(2)}
-            </Text>
+            <Text style={[styles.totalAmount, { color: accent }]}>${total.toFixed(2)}</Text>
           </View>
         }
       />
@@ -274,18 +235,23 @@ export default function BucketScreen() {
           <TouchableOpacity
             style={[styles.secondaryBtn, { borderColor: border }]}
             onPress={() => {
-              Alert.prompt(
-                'Save Route',
-                'Give this route a name',
-                (name) => {
-                  if (name?.trim()) {
-                    saveRoute(name, items);
-                    Alert.alert('Saved!', `"${name.trim()}" saved to your routes.`);
-                  }
-                },
-                'plain-text',
-                `Route ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
-              );
+              if (Platform.OS === 'ios') {
+                Alert.prompt(
+                  'Save List',
+                  'Give this list a name',
+                  (name) => {
+                    if (name?.trim()) {
+                      saveRoute(name, items);
+                      Alert.alert('Saved!', `"${name.trim()}" saved.`);
+                    }
+                  },
+                  'plain-text',
+                  `List ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`,
+                );
+              } else {
+                saveRoute(`List ${new Date().toLocaleDateString()}`, items);
+                Alert.alert('Saved!', 'List saved.');
+              }
             }}
             accessibilityRole="button"
           >
@@ -302,27 +268,27 @@ export default function BucketScreen() {
           </TouchableOpacity>
         </View>
         <TouchableOpacity
-          style={[styles.shareBtn, { borderColor: accent }]}
-          onPress={handleShare}
-          disabled={sharing}
+          style={[styles.cta, { backgroundColor: accent }]}
+          onPress={buildRoute}
           accessibilityRole="button"
         >
-          {sharing
-            ? <ActivityIndicator size="small" color={accent} />
-            : <Text style={[styles.shareBtnText, { color: accent }]}>↑  Share Route with a Friend</Text>
-          }
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.cta, { backgroundColor: accent }]} onPress={buildRoute} accessibilityRole="button">
-          <Text style={[styles.ctaText, { color: accentLight }]}>🗺️  Navigate — {stores.length} {stores.length === 1 ? 'stop' : 'stops'}</Text>
+          <Text style={[styles.ctaText, { color: accentLight }]}>
+            🗺️  Navigate — {stores.length} {stores.length === 1 ? 'stop' : 'stops'}
+          </Text>
         </TouchableOpacity>
       </View>
 
-      {/* Saved Routes modal */}
-      <Modal visible={showSaved} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setShowSaved(false)}>
+      {/* Saved Lists modal */}
+      <Modal
+        visible={showSaved}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowSaved(false)}
+      >
         <SafeAreaView style={[styles.safe, { backgroundColor: bg }]}>
           <View style={[styles.nav, { borderBottomColor: border }]}>
             <View style={{ width: 28 }} />
-            <Text style={[styles.navTitle, { color: text }]}>Saved Routes</Text>
+            <Text style={[styles.navTitle, { color: text }]}>Saved Lists</Text>
             <TouchableOpacity onPress={() => setShowSaved(false)}>
               <Text style={[styles.clearBtn, { color: accent }]}>Done</Text>
             </TouchableOpacity>
@@ -330,8 +296,8 @@ export default function BucketScreen() {
           {savedRoutes.length === 0 ? (
             <View style={styles.empty}>
               <Text style={styles.emptyIcon}>📂</Text>
-              <Text style={[styles.emptyTitle, { color: text }]}>No saved routes</Text>
-              <Text style={[styles.emptySub, { color: textSec }]}>Tap 💾 Save to keep a route for later.</Text>
+              <Text style={[styles.emptyTitle, { color: text }]}>No saved lists</Text>
+              <Text style={[styles.emptySub, { color: textSec }]}>Tap Save to keep a list for later.</Text>
             </View>
           ) : (
             <FlatList
@@ -349,7 +315,7 @@ export default function BucketScreen() {
                     </View>
                     <TouchableOpacity
                       onPress={() => {
-                        Alert.alert('Delete route?', `"${r.name}" will be removed.`, [
+                        Alert.alert('Delete list?', `"${r.name}" will be removed.`, [
                           { text: 'Cancel', style: 'cancel' },
                           { text: 'Delete', style: 'destructive', onPress: () => removeSavedRoute(r.id) },
                         ]);
@@ -363,8 +329,8 @@ export default function BucketScreen() {
                     style={[styles.loadRouteBtn, { backgroundColor: accent }]}
                     onPress={() => {
                       Alert.alert(
-                        'Load route?',
-                        'This will replace your current route.',
+                        'Load list?',
+                        'This will replace your current list.',
                         [
                           { text: 'Cancel', style: 'cancel' },
                           { text: 'Load', onPress: () => { replaceAll(r.items); setShowSaved(false); } },
@@ -372,7 +338,7 @@ export default function BucketScreen() {
                       );
                     }}
                   >
-                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Load Route</Text>
+                    <Text style={{ color: '#fff', fontSize: 13, fontWeight: '500' }}>Load List</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -420,7 +386,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 0.5,
     gap: 12,
   },
-  itemName: { fontSize: 14, marginBottom: 2 },
+  itemName: { fontSize: 14, marginBottom: 1 },
+  itemSize: { fontSize: 11, marginBottom: 2 },
   itemPrice: { fontSize: 12, fontWeight: '500' },
   qtyRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   qtyBtn: {
@@ -455,15 +422,6 @@ const styles = StyleSheet.create({
   loadRouteBtn: {
     borderRadius: 10, paddingVertical: 9, alignItems: 'center',
   },
-  shareBtn: {
-    borderRadius: 12,
-    padding: 14,
-    alignItems: 'center',
-    borderWidth: 1.5,
-    minHeight: 48,
-    justifyContent: 'center',
-  },
-  shareBtnText: { fontSize: 15, fontWeight: '500' },
   cta: {
     borderRadius: 12,
     padding: 16, alignItems: 'center',

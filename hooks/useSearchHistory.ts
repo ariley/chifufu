@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CategoryKey, SearchHistoryEntry } from '../types';
 
 const STORAGE_KEY = 'cheapEats:searchHistory';
 const MAX_ENTRIES = 8;
+
+export interface SearchHistoryEntry {
+  query: string;
+  timestamp: number;
+}
 
 export function useSearchHistory() {
   const [history, setHistory] = useState<SearchHistoryEntry[]>([]);
@@ -14,12 +18,11 @@ export function useSearchHistory() {
       .catch(() => {});
   }, []);
 
-  const push = useCallback((query: string, category: CategoryKey, location: string) => {
+  const push = useCallback((query: string) => {
     if (!query.trim()) return;
     setHistory((prev) => {
-      // Deduplicate by query (case-insensitive)
       const filtered = prev.filter((e) => e.query.toLowerCase() !== query.toLowerCase());
-      const next = [{ query: query.trim(), category, location, timestamp: Date.now() }, ...filtered].slice(0, MAX_ENTRIES);
+      const next = [{ query: query.trim(), timestamp: Date.now() }, ...filtered].slice(0, MAX_ENTRIES);
       AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
       return next;
     });

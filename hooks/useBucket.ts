@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BucketItem, ResultItem } from '../types';
+import { BucketItem, GroceryItem } from '../types';
 
 const STORAGE_KEY = 'cheapEats:bucket';
 
@@ -21,7 +21,7 @@ export function useBucket() {
 
   const isInBucket = useCallback((id: string) => items.some((i) => i.id === id), [items]);
 
-  const add = useCallback((item: ResultItem) => {
+  const add = useCallback((item: GroceryItem) => {
     const existing = items.find((i) => i.id === item.id);
     if (existing) {
       persist(items.map((i) => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i));

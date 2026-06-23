@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ResultItem } from '../types';
+import { GroceryItem } from '../types';
 
 const STORAGE_KEY = 'cheapEats:saved';
 
 export function useSaved() {
-  const [saved, setSaved] = useState<ResultItem[]>([]);
+  const [saved, setSaved] = useState<GroceryItem[]>([]);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -16,7 +16,7 @@ export function useSaved() {
       .finally(() => setLoaded(true));
   }, []);
 
-  const persist = useCallback((items: ResultItem[]) => {
+  const persist = useCallback((items: GroceryItem[]) => {
     setSaved(items);
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(items));
   }, []);
@@ -27,7 +27,7 @@ export function useSaved() {
   );
 
   const toggle = useCallback(
-    (item: ResultItem) => {
+    (item: GroceryItem) => {
       persist(
         isSaved(item.id)
           ? saved.filter((s) => s.id !== item.id)

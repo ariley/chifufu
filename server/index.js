@@ -1,9 +1,13 @@
 const express = require('express');
 const cors = require('cors');
+const authRoutes = require('./routes/auth');
+const { findNearestStore, searchProducts } = require('./lib/kroger');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
@@ -237,6 +241,34 @@ ${storeHtml}
 <a href="chifufu://cart?code=${code}" class="btn">Open in Chifufu app</a>
 <a href="https://apps.apple.com/app/expo-go/id982107779" class="btn-outline">Get the app</a>
 </body></html>`);
+});
+
+// ── Kroger: nearby stores ──────────────────────────────────────
+app.get('/api/kroger/stores', async (req, res) => {
+  const { lat, lng, radius } = req.query;
+  if (!lat || !lng) return res.status(400).json({ error: 'lat and lng required' });
+  try {
+    const stores = await findNearestStore(parseFloat(lat), parseFloat(lng), parseFloat(radius ?? 10));
+    if (!stores) return res.json([]);
+    res.json(stores);
+  } catch (err) {
+    console.error('kroger/stores error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ── Kroger: product search ─────────────────────────────────────
+app.get('/api/kroger/search', async (req, res) => {
+  const { q, locationId, limit } = req.query;
+  if (!q) return res.status(400).json({ error: 'q (search query) required' });
+  if (!locationId) return res.status(400).json({ error: 'locationId required' });
+  try {
+    const products = await searchProducts(q, locationId, parseInt(limit ?? 20));
+    res.json(products);
+  } catch (err) {
+    console.error('kroger/search error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
 });
 
 app.get('/', (_req, res) => res.json({ name: 'Chifufu API', status: 'ok', version: '2.0' }));

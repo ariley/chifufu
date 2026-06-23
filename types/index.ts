@@ -1,35 +1,29 @@
-export type CategoryKey = 'go-out' | 'order-in' | 'grocery' | 'under5' | 'under10' | 'pet-stores';
-
-export interface SearchHistoryEntry {
-  query: string;
-  category: CategoryKey;
-  location: string;
-  timestamp: number;
-}
-export type BadgeKey = 'deal' | 'fast' | 'close';
-
-export interface ResultItem {
+export interface GroceryItem {
   id: string;
+  upc: string;
   name: string;
-  description: string;
-  price: string;
-  priceValue: number;
-  distance: string;
-  badges: BadgeKey[];
-  address?: string;
-  platform?: string;
-  lat?: number;
-  lng?: number;
+  brand: string;
+  size: string;
+  price: string;        // "$9.99"
+  priceValue: number;   // 9.99
+  regularPrice: string;
+  onSale: boolean;
+  savings: string | null;
+  imageUrl: string | null;
+  badges: string[];
+  // store context (added client-side)
+  storeName?: string;
+  storeId?: string;
+  storeAddress?: string;
 }
 
-export interface BucketItem extends ResultItem {
+export interface BucketItem extends GroceryItem {
   quantity: number;
 }
 
 export type RootStackParamList = {
   Home: undefined;
-  Results: { category: CategoryKey; location: string; searchQuery?: string; lat?: number; lng?: number };
-  Detail: { item: ResultItem; location: string };
+  Results: { query: string; lat: number; lng: number };
   Bucket: undefined;
   Settings: undefined;
   Auth: undefined;
