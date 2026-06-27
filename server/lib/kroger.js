@@ -64,15 +64,18 @@ async function findNearestStore(lat, lng, radiusMiles = 10) {
   }));
 }
 
-// Search products at a specific store — returns array of product results
+// Search products — locationId filter only works in production (cert env has no per-store inventory)
 async function searchProducts(query, locationId, limit = 20) {
   const token = await getToken();
+  const inProd = process.env.KROGER_ENV === 'production';
   const params = new URLSearchParams({
     'filter.term': query,
-    'filter.locationId': locationId,
     'filter.limit': String(limit),
-    'filter.fulfillment': 'ais', // available in store
   });
+  if (inProd && locationId) {
+    params.set('filter.locationId', locationId);
+    params.set('filter.fulfillment', 'ais');
+  }
 
   const res = await fetch(`${KROGER_BASE}/products?${params}`, {
     headers: { Authorization: `Bearer ${token}` },
