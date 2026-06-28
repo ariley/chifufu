@@ -138,12 +138,15 @@ function productMatchesQuery(query) {
     .map(token => token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token);
 
   return product => {
-    const haystack = [product.name, product.brand, product.size]
+    const haystackTokens = new Set([product.name, product.brand, product.size]
       .filter(Boolean)
       .join(' ')
-      .toLowerCase();
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean)
+      .map(token => token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token));
 
-    return tokens.every(token => haystack.includes(token));
+    return tokens.every(token => haystackTokens.has(token));
   };
 }
 
