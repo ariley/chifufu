@@ -167,6 +167,11 @@ function buildSearchTerms(query) {
 const GENERIC_PRODUCT_MODIFIERS = new Set([
   'italian',
   'style',
+  'kroger',
+  'private',
+  'selection',
+  'simple',
+  'truth',
   'fresh',
   'organic',
   'natural',
