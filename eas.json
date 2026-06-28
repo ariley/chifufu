@@ -24,9 +24,7 @@
   },
   "submit": {
     "production": {
-      "ios": {
-        "appleId": "ariley@gmail.com"
-      }
+      "ios": {}
     }
   }
 }
