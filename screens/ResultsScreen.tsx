@@ -4,6 +4,7 @@ import {
   FlatList,
   Image,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -42,6 +43,8 @@ export default function ResultsScreen() {
 
   const [results, setResults] = useState<GroceryItem[]>([]);
   const [groceryStores, setGroceryStores] = useState<GroceryStore[]>([]);
+  const [liveStores, setLiveStores] = useState<StoreInfo[]>([]);
+  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
   const [store, setStore] = useState<StoreInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +74,7 @@ export default function ResultsScreen() {
     setError(null);
     setResults([]);
     setGroceryStores([]);
+    setLiveStores([]);
     setStore(null);
     try {
       const [nearbyGroceryStores, stores]: [GroceryStore[], StoreInfo[]] = await Promise.all([
@@ -86,10 +90,16 @@ export default function ResultsScreen() {
         return;
       }
       const preferredStores = preferStoresForLocation(stores, locationLabel);
-      let fallbackStore = preferredStores[0];
+      setLiveStores(preferredStores);
+
+      const selectedStores = selectedStoreId
+        ? preferredStores.filter(candidate => candidate.locationId === selectedStoreId)
+        : [];
+      const searchStores = selectedStores.length > 0 ? selectedStores : preferredStores;
+      let fallbackStore = searchStores[0];
       setStore(fallbackStore);
 
-      for (const candidate of preferredStores) {
+      for (const candidate of searchStores) {
         const rawItems = await searchGroceries(query, candidate.locationId);
         const items: GroceryItem[] = (rawItems ?? []).map((item: GroceryItem) => ({
           ...item,
@@ -112,7 +122,7 @@ export default function ResultsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [query, lat, lng, locationLabel]);
+  }, [query, lat, lng, locationLabel, selectedStoreId]);
 
   useEffect(() => {
     loadResults();
@@ -136,6 +146,56 @@ export default function ResultsScreen() {
           {storeItem.rating ? `${storeItem.rating.toFixed(1)} stars` : 'Grocery store'}
           {storeItem.priceLevel != null ? ` · ${'$'.repeat(Math.max(1, storeItem.priceLevel))}` : ''}
         </Text>
+      </View>
+    );
+  }
+
+  function renderLiveStorePicker() {
+    if (liveStores.length === 0) return null;
+
+    return (
+      <View style={styles.liveStorePicker}>
+        <Text style={[styles.storeHeader, { color: textTer }]}>
+          Search live prices at
+        </Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.liveStoreChips}
+        >
+          <TouchableOpacity
+            style={[
+              styles.liveStoreChip,
+              { borderColor: selectedStoreId === null ? accent : border, backgroundColor: selectedStoreId === null ? accent : bgSec },
+            ]}
+            onPress={() => setSelectedStoreId(null)}
+            accessibilityRole="button"
+            accessibilityLabel="Search all live stores"
+          >
+            <Text style={[styles.liveStoreChipText, { color: selectedStoreId === null ? accentLight : textSec }]}>
+              All live stores
+            </Text>
+          </TouchableOpacity>
+          {liveStores.map(candidate => {
+            const selected = selectedStoreId === candidate.locationId;
+            return (
+              <TouchableOpacity
+                key={candidate.locationId}
+                style={[
+                  styles.liveStoreChip,
+                  { borderColor: selected ? accent : border, backgroundColor: selected ? accent : bgSec },
+                ]}
+                onPress={() => setSelectedStoreId(candidate.locationId)}
+                accessibilityRole="button"
+                accessibilityLabel={`Search ${candidate.name}`}
+              >
+                <Text style={[styles.liveStoreChipText, { color: selected ? accentLight : textSec }]} numberOfLines={1}>
+                  {candidate.name.replace(/^Foodsco - /, '')}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
       </View>
     );
   }
@@ -260,6 +320,7 @@ export default function ResultsScreen() {
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListHeaderComponent={
             <View style={styles.priceSectionHeader}>
+              {renderLiveStorePicker()}
               <Text style={[styles.storeHeader, { color: textTer }]}>
                 Live item prices
               </Text>
@@ -400,6 +461,17 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   priceSectionHeader: { marginBottom: 2 },
+  liveStorePicker: { marginBottom: 14 },
+  liveStoreChips: { gap: 8, paddingRight: 16 },
+  liveStoreChip: {
+    borderRadius: 8,
+    borderWidth: 0.5,
+    paddingHorizontal: 12,
+    height: 34,
+    justifyContent: 'center',
+    maxWidth: 180,
+  },
+  liveStoreChipText: { fontSize: 13, fontWeight: '600' },
   storeSection: { marginBottom: 2 },
   storeCard: {
     borderRadius: 10,
