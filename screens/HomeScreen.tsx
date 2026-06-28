@@ -117,10 +117,10 @@ export default function HomeScreen() {
     try {
       const { lat, lng } = await resolveSearchCoords();
       pushHistory(q);
-      navigation.navigate('Results', { query: q, lat, lng });
+      navigation.navigate('Results', { query: q, lat, lng, locationLabel: location });
     } catch {
       pushHistory(q);
-      navigation.navigate('Results', { query: q, lat: 37.8044, lng: -122.2712 });
+      navigation.navigate('Results', { query: q, lat: 37.8044, lng: -122.2712, locationLabel: 'Oakland, CA' });
     } finally {
       setResolvingSearchLocation(false);
     }

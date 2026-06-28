@@ -35,7 +35,7 @@ interface StoreInfo {
 export default function ResultsScreen() {
   const navigation = useNavigation<Nav>();
   const route = useRoute<Route>();
-  const { query, lat, lng } = route.params;
+  const { query, lat, lng, locationLabel } = route.params;
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
   const { bg, bgSec, text, textSec, textTer, border, accent, accentLight } = useThemeContext();
@@ -75,10 +75,11 @@ export default function ResultsScreen() {
         setError('No Kroger stores found near you.');
         return;
       }
-      let fallbackStore = stores[0];
+      const preferredStores = preferStoresForLocation(stores, locationLabel);
+      let fallbackStore = preferredStores[0];
       setStore(fallbackStore);
 
-      for (const candidate of stores) {
+      for (const candidate of preferredStores) {
         const rawItems = await searchGroceries(query, candidate.locationId);
         const items: GroceryItem[] = (rawItems ?? []).map((item: GroceryItem) => ({
           ...item,
@@ -258,6 +259,18 @@ export default function ResultsScreen() {
       </Animated.View>
     </SafeAreaView>
   );
+}
+
+function preferStoresForLocation(stores: StoreInfo[], locationLabel?: string) {
+  const city = locationLabel?.split(',')[0]?.trim().toLowerCase();
+  if (!city) return stores;
+
+  const cityStores = stores.filter(store => {
+    const text = `${store.name} ${store.address}`.toLowerCase();
+    return text.includes(city);
+  });
+
+  return cityStores.length > 0 ? cityStores : stores;
 }
 
 // ── Skeleton loading cards ─────────────────────────────────────
