@@ -171,7 +171,7 @@ function buildSearchTerms(query) {
 }
 
 const QUERY_ALIASES = new Map([
-  ['norwegian cream cheese', ['snofrisk']],
+  ['norwegian cream cheese', ['snofrisk', 'tine']],
 ]);
 
 const GENERIC_FALLBACK_PHRASES = new Set([

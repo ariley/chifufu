@@ -362,7 +362,7 @@ export default function ResultsScreen() {
                 <Text style={[styles.storeHeader, { color: textTer }]}>
                   Grocery stores near {locationLabel || 'you'}
                 </Text>
-                {groceryStores.slice(0, 8).map(renderStoreCard)}
+                {groceryStores.slice(0, 12).map(renderStoreCard)}
               </View>
             ) : null
           }
@@ -385,7 +385,7 @@ export default function ResultsScreen() {
                   <Text style={[styles.storeHeader, { color: textTer }]}>
                     Grocery stores near {locationLabel || 'you'}
                   </Text>
-                  {groceryStores.slice(0, 8).map(renderStoreCard)}
+                  {groceryStores.slice(0, 12).map(renderStoreCard)}
                 </View>
               ) : null}
             </View>

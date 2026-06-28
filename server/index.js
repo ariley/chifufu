@@ -271,11 +271,11 @@ app.get('/api/kroger/stores', async (req, res) => {
 
 // ── Grocery: real nearby grocery stores via Google Places ──────
 app.get('/api/grocery/stores', async (req, res) => {
-  const { lat, lng, location } = req.query;
+  const { lat, lng } = req.query;
   if (!lat || !lng) return res.status(400).json({ error: 'lat and lng required' });
   try {
     const places = await queryGooglePlaces(parseFloat(lat), parseFloat(lng), 'grocery');
-    res.json(filterPlacesForLocation(places, location));
+    res.json(places);
   } catch (err) {
     console.error('grocery/stores error:', err.message);
     res.status(502).json({ error: err.message });
