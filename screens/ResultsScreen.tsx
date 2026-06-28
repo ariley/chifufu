@@ -45,6 +45,7 @@ export default function ResultsScreen() {
   const [store, setStore] = useState<StoreInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const resultsLocationLabel = locationLabel?.trim() || 'your selected location';
 
   const { isInBucket, add: addToBucket, count: bucketCount } = useBucketContext();
 
@@ -218,11 +219,9 @@ export default function ResultsScreen() {
           <Text style={[styles.navTitle, { color: text }]} numberOfLines={1}>
             "{query}"
           </Text>
-          {store ? (
-            <Text style={[styles.navSub, { color: textTer }]} numberOfLines={1}>
-              {store.name} · {store.address}
-            </Text>
-          ) : null}
+          <Text style={[styles.navSub, { color: textTer }]} numberOfLines={1}>
+            {resultsLocationLabel}
+          </Text>
         </View>
         <TouchableOpacity
           onPress={() => navigation.navigate('Bucket')}
@@ -270,9 +269,7 @@ export default function ResultsScreen() {
                 </View>
               ) : null}
               <Text style={[styles.storeHeader, { color: textTer, marginTop: groceryStores.length > 0 ? 18 : 0 }]}>
-                {store && results.length > 0
-                  ? `Live prices at ${store.name}`
-                  : 'Live Kroger-family prices'}
+                Live item prices
               </Text>
             </View>
           }
@@ -282,11 +279,9 @@ export default function ResultsScreen() {
               <Text style={[styles.emptyTitle, { color: text }]}>
                 No live prices for "{query}"
               </Text>
-              {store ? (
-                <Text style={[styles.emptyMsg, { color: textSec }]}>
-                  at {store.name}
-                </Text>
-              ) : null}
+              <Text style={[styles.emptyMsg, { color: textSec }]}>
+                near {resultsLocationLabel}
+              </Text>
               <Text style={[styles.emptyHint, { color: textTer }]}>
                 Nearby stores are listed above. Live item prices are only available where a store API provides them.
               </Text>
