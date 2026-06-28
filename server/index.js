@@ -368,6 +368,7 @@ app.post('/api/results', async (req, res) => {
         ...item,
         lat: match.lat,
         lng: match.lng,
+        rating: match.rating,
         address: item.address || match.address || undefined,
         distance: item.distance || `${match.distMi} mi`,
       };

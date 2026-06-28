@@ -11,6 +11,7 @@ export interface GroceryItem {
   savings: string | null;
   imageUrl: string | null;
   badges: string[];
+  rating?: number;
   // store context (added client-side)
   storeName?: string;
   storeId?: string;

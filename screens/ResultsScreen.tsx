@@ -4,7 +4,6 @@ import {
   FlatList,
   Image,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -15,8 +14,8 @@ import { useThemeContext } from '../contexts/ThemeContext';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
-import { GroceryItem, GroceryStore, RootStackParamList } from '../types';
-import { fetchNearbyGroceryStores, fetchNearbyStores, searchGroceries } from '../lib/api';
+import { GroceryItem, RootStackParamList } from '../types';
+import { fetchPricedGroceryOptions, PricedStoreOption } from '../lib/api';
 import { useBucketContext } from '../App';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Results'>;
@@ -24,13 +23,25 @@ type Route = RouteProp<RootStackParamList, 'Results'>;
 
 const SALE_GREEN = '#1D9E75';
 
-interface StoreInfo {
-  locationId: string;
-  name: string;
-  chain: string;
-  address: string;
-  lat: number;
-  lng: number;
+function toGroceryItem(option: PricedStoreOption): GroceryItem {
+  return {
+    id: option.id,
+    upc: '',
+    name: option.description,
+    brand: '',
+    size: option.distance,
+    price: option.price,
+    priceValue: option.priceValue,
+    regularPrice: '',
+    onSale: option.badges?.includes('deal') ?? false,
+    savings: null,
+    imageUrl: null,
+    badges: option.badges ?? [],
+    rating: option.rating,
+    storeName: option.name,
+    storeId: `${option.name}-${option.address ?? option.id}`,
+    storeAddress: option.address,
+  };
 }
 
 export default function ResultsScreen() {
@@ -42,24 +53,15 @@ export default function ResultsScreen() {
   const { bg, bgSec, text, textSec, textTer, border, accent, accentLight } = useThemeContext();
 
   const [results, setResults] = useState<GroceryItem[]>([]);
-  const [groceryStores, setGroceryStores] = useState<GroceryStore[]>([]);
-  const [liveStores, setLiveStores] = useState<StoreInfo[]>([]);
-  const [selectedStoreId, setSelectedStoreId] = useState<string | null>(null);
-  const [store, setStore] = useState<StoreInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [priceLoading, setPriceLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const resultsLocationLabel = locationLabel?.trim() || 'your selected location';
-  const selectedLiveStore = selectedStoreId
-    ? liveStores.find(candidate => candidate.locationId === selectedStoreId) ?? null
-    : null;
 
   const { isInBucket, add: addToBucket, count: bucketCount } = useBucketContext();
 
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loadSeq = useRef(0);
-  const hasLoadedStoreContext = useRef(false);
 
   function showToast() {
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -78,152 +80,27 @@ export default function ResultsScreen() {
   const loadResults = useCallback(async () => {
     const seq = loadSeq.current + 1;
     loadSeq.current = seq;
-    const fullScreenLoad = !hasLoadedStoreContext.current;
 
-    setLoading(fullScreenLoad);
-    setPriceLoading(!fullScreenLoad);
+    setLoading(true);
     setError(null);
     setResults([]);
-    setStore(null);
     try {
-      const [nearbyGroceryStores, stores]: [GroceryStore[], StoreInfo[]] = await Promise.all([
-        fetchNearbyGroceryStores(lat, lng, locationLabel),
-        fetchNearbyStores(lat, lng),
-      ]);
+      const pricedOptions = await fetchPricedGroceryOptions(query, resultsLocationLabel, lat, lng);
       if (seq !== loadSeq.current) return;
-
-      setGroceryStores(nearbyGroceryStores ?? []);
-
-      if (!stores || stores.length === 0) {
-        if (!nearbyGroceryStores || nearbyGroceryStores.length === 0) {
-          setError('No grocery stores found near you.');
-        }
-        return;
-      }
-      const preferredStores = preferStoresForLocation(stores, locationLabel);
-      setLiveStores(preferredStores);
-      hasLoadedStoreContext.current = true;
-
-      const selectedStores = selectedStoreId
-        ? preferredStores.filter(candidate => candidate.locationId === selectedStoreId)
-        : [];
-      if (selectedStoreId && selectedStores.length === 0) {
-        setSelectedStoreId(null);
-        return;
-      }
-      const searchStores = selectedStores.length > 0 ? selectedStores : preferredStores;
-      let fallbackStore = searchStores[0];
-      setStore(fallbackStore);
-      const nextResults: GroceryItem[] = [];
-
-      for (const candidate of searchStores) {
-        const rawItems = await searchGroceries(query, candidate.locationId);
-        if (seq !== loadSeq.current) return;
-        const items: GroceryItem[] = (rawItems ?? []).map((item: GroceryItem) => ({
-          ...item,
-          storeName: candidate.name,
-          storeId: candidate.locationId,
-          storeAddress: candidate.address,
-        }));
-
-        nextResults.push(...items);
-      }
-
-      nextResults.sort((a, b) => a.priceValue - b.priceValue);
-      setStore(nextResults[0]?.storeId
-        ? searchStores.find(candidate => candidate.locationId === nextResults[0].storeId) ?? fallbackStore
-        : fallbackStore);
-      setResults(nextResults);
+      setResults((pricedOptions ?? []).map(toGroceryItem));
     } catch (err) {
       if (seq !== loadSeq.current) return;
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
       if (seq === loadSeq.current) {
         setLoading(false);
-        setPriceLoading(false);
       }
     }
-  }, [query, lat, lng, locationLabel, selectedStoreId]);
+  }, [query, lat, lng, resultsLocationLabel]);
 
   useEffect(() => {
     loadResults();
   }, [loadResults]);
-
-  function renderStoreCard(storeItem: GroceryStore) {
-    return (
-      <View key={`${storeItem.name}-${storeItem.address}`} style={[styles.storeCard, { backgroundColor: bgSec, borderColor: border }]}>
-        <View style={styles.storeCardTop}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.storeCardName, { color: text }]} numberOfLines={1}>
-              {storeItem.name}
-            </Text>
-            <Text style={[styles.storeCardAddress, { color: textSec }]} numberOfLines={1}>
-              {storeItem.address}
-            </Text>
-          </View>
-          <Text style={[styles.storeDistance, { color: accent }]}>{storeItem.distMi} mi</Text>
-        </View>
-        <Text style={[styles.storeMeta, { color: textTer }]}>
-          {storeItem.rating ? `${storeItem.rating.toFixed(1)} stars` : 'Grocery store'}
-          {storeItem.priceLevel != null ? ` · ${'$'.repeat(Math.max(1, storeItem.priceLevel))}` : ''}
-        </Text>
-      </View>
-    );
-  }
-
-  function renderLiveStorePicker() {
-    if (liveStores.length === 0) return null;
-
-    return (
-      <View style={styles.liveStorePicker}>
-        <Text style={[styles.storeHeader, { color: textTer }]}>
-          Search live prices at
-        </Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.liveStoreChips}
-        >
-          <TouchableOpacity
-            style={[
-              styles.liveStoreChip,
-              { borderColor: selectedStoreId === null ? accent : border, backgroundColor: selectedStoreId === null ? accent : bgSec },
-            ]}
-            onPress={() => setSelectedStoreId(null)}
-            disabled={priceLoading}
-            accessibilityRole="button"
-            accessibilityLabel="Search all live stores"
-            accessibilityState={{ selected: selectedStoreId === null, disabled: priceLoading }}
-          >
-            <Text style={[styles.liveStoreChipText, { color: selectedStoreId === null ? accentLight : textSec }]}>
-              All live stores
-            </Text>
-          </TouchableOpacity>
-          {liveStores.map(candidate => {
-            const selected = selectedStoreId === candidate.locationId;
-            return (
-              <TouchableOpacity
-                key={candidate.locationId}
-                style={[
-                  styles.liveStoreChip,
-                  { borderColor: selected ? accent : border, backgroundColor: selected ? accent : bgSec },
-                ]}
-                onPress={() => setSelectedStoreId(candidate.locationId)}
-                disabled={priceLoading}
-                accessibilityRole="button"
-                accessibilityLabel={`Search ${candidate.name}`}
-                accessibilityState={{ selected, disabled: priceLoading }}
-              >
-                <Text style={[styles.liveStoreChipText, { color: selected ? accentLight : textSec }]} numberOfLines={1}>
-                  {candidate.name.replace(/^Foodsco - /, '')}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-    );
-  }
 
   function renderCard({ item }: { item: GroceryItem }) {
     const inList = isInBucket(item.id);
@@ -262,6 +139,11 @@ export default function ResultsScreen() {
                 <Text style={[styles.cardSize, { color: textSec }]} numberOfLines={1}>
                   {item.size}
                 </Text>
+                {item.storeName ? (
+                  <Text style={[styles.cardStore, { color: textTer }]} numberOfLines={1}>
+                    {item.storeName}{item.rating ? ` · ${item.rating.toFixed(1)} stars` : ''}{item.storeAddress ? ` · ${item.storeAddress}` : ''}
+                  </Text>
+                ) : null}
               </View>
               <View style={styles.priceCol}>
                 <Text style={[styles.cardPrice, { color: accent }]}>{item.price}</Text>
@@ -344,50 +226,24 @@ export default function ResultsScreen() {
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListHeaderComponent={
-            <View style={styles.priceSectionHeader}>
-              {renderLiveStorePicker()}
+            results.length > 0 ? (
               <Text style={[styles.storeHeader, { color: textTer }]}>
-                {priceLoading ? 'Loading live prices...' : 'Live item prices'}
+                Priced options across supermarkets
               </Text>
-              {store && results.length > 0 ? (
-                <Text style={[styles.priceSource, { color: textTer }]} numberOfLines={1}>
-                  {selectedLiveStore ? `Searching ${selectedLiveStore.name}` : 'Showing matches from live stores'}
-                </Text>
-              ) : null}
-            </View>
-          }
-          ListFooterComponent={
-            groceryStores.length > 0 ? (
-              <View style={styles.storeSection}>
-                <Text style={[styles.storeHeader, { color: textTer }]}>
-                  Grocery stores near {locationLabel || 'you'}
-                </Text>
-                {groceryStores.slice(0, 12).map(renderStoreCard)}
-              </View>
             ) : null
           }
           ListEmptyComponent={
-            <View>
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyIcon}>🔍</Text>
-                <Text style={[styles.emptyTitle, { color: text }]}>
-                  No live prices for "{query}"
-                </Text>
-                <Text style={[styles.emptyMsg, { color: textSec }]}>
-                  {selectedLiveStore ? `at ${selectedLiveStore.name}` : `near ${resultsLocationLabel}`}
-                </Text>
-                <Text style={[styles.emptyHint, { color: textTer }]}>
-                  Nearby stores are listed below. Live item prices are only available where a store API provides them.
-                </Text>
-              </View>
-              {groceryStores.length > 0 ? (
-                <View style={styles.storeSection}>
-                  <Text style={[styles.storeHeader, { color: textTer }]}>
-                    Grocery stores near {locationLabel || 'you'}
-                  </Text>
-                  {groceryStores.slice(0, 12).map(renderStoreCard)}
-                </View>
-              ) : null}
+            <View style={styles.emptyWrap}>
+              <Text style={styles.emptyIcon}>🔍</Text>
+              <Text style={[styles.emptyTitle, { color: text }]}>
+                No priced options for "{query}"
+              </Text>
+              <Text style={[styles.emptyMsg, { color: textSec }]}>
+                near {resultsLocationLabel}
+              </Text>
+              <Text style={[styles.emptyHint, { color: textTer }]}>
+                Try a broader product name.
+              </Text>
             </View>
           }
         />
@@ -398,18 +254,6 @@ export default function ResultsScreen() {
       </Animated.View>
     </SafeAreaView>
   );
-}
-
-function preferStoresForLocation(stores: StoreInfo[], locationLabel?: string) {
-  const city = locationLabel?.split(',')[0]?.trim().toLowerCase();
-  if (!city) return stores;
-
-  const cityStores = stores.filter(store => {
-    const text = `${store.name} ${store.address}`.toLowerCase();
-    return text.includes(city);
-  });
-
-  return cityStores.length > 0 ? cityStores : stores;
 }
 
 // ── Skeleton loading cards ─────────────────────────────────────
@@ -570,6 +414,7 @@ const styles = StyleSheet.create({
   },
   cardName: { fontSize: 14, fontWeight: '500', lineHeight: 18 },
   cardSize: { fontSize: 12, marginTop: 2 },
+  cardStore: { fontSize: 11, marginTop: 3 },
   priceCol: { alignItems: 'flex-end' },
   cardPrice: { fontSize: 16, fontWeight: '600' },
   regularPrice: {

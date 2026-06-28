@@ -22,3 +22,43 @@ export async function searchGroceries(query: string, locationId: string) {
   );
   return res.json();
 }
+
+export interface PricedStoreOption {
+  id: string;
+  name: string;
+  description: string;
+  price: string;
+  priceValue: number;
+  distance: string;
+  badges?: string[];
+  address?: string;
+  lat?: number;
+  lng?: number;
+  rating?: number;
+}
+
+export async function fetchPricedGroceryOptions(
+  query: string,
+  location: string,
+  lat: number,
+  lng: number,
+) {
+  const res = await fetch(`${BASE}/api/results`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      location,
+      category: 'grocery',
+      searchQuery: query,
+      lat,
+      lng,
+    }),
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.error || `Request failed ${res.status}`);
+  }
+
+  return res.json() as Promise<PricedStoreOption[]>;
+}
