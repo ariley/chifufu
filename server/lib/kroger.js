@@ -148,14 +148,20 @@ function productMatchesQuery(query) {
 }
 
 function buildSearchTerms(query) {
+  const normalizedQuery = String(query).trim().toLowerCase();
   const tokens = String(query)
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(token => token.length > 2);
   const terms = [String(query).trim()];
+  const aliases = QUERY_ALIASES.get(normalizedQuery);
+  if (aliases) terms.push(...aliases);
 
   if (tokens.length >= 2) {
-    terms.push(tokens.slice(-2).join(' '));
+    const phrase = tokens.slice(-2).join(' ');
+    if (!GENERIC_FALLBACK_PHRASES.has(phrase)) {
+      terms.push(phrase);
+    }
   }
 
   const productToken = tokens.find(token => !GENERIC_PRODUCT_MODIFIERS.has(token));
@@ -164,8 +170,17 @@ function buildSearchTerms(query) {
   return [...new Set(terms.filter(Boolean))];
 }
 
+const QUERY_ALIASES = new Map([
+  ['norwegian cream cheese', ['snofrisk']],
+]);
+
+const GENERIC_FALLBACK_PHRASES = new Set([
+  'cream cheese',
+]);
+
 const GENERIC_PRODUCT_MODIFIERS = new Set([
   'italian',
+  'norwegian',
   'style',
   'kroger',
   'private',
@@ -179,6 +194,8 @@ const GENERIC_PRODUCT_MODIFIERS = new Set([
   'small',
   'sliced',
   'shredded',
+  'cream',
+  'cheese',
   'whole',
   'low',
   'fat',
