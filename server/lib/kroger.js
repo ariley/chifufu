@@ -64,15 +64,14 @@ async function findNearestStore(lat, lng, radiusMiles = 10) {
   }));
 }
 
-// Search products — locationId filter only works in production (cert env has no per-store inventory)
+// Search products at a specific store — returns array of product results
 async function searchProducts(query, locationId, limit = 20) {
   const token = await getToken();
-  const inProd = process.env.KROGER_ENV === 'production';
   const params = new URLSearchParams({
     'filter.term': query,
     'filter.limit': String(limit),
   });
-  if (inProd && locationId) {
+  if (locationId) {
     params.set('filter.locationId', locationId);
     params.set('filter.fulfillment', 'ais');
   }
@@ -84,7 +83,7 @@ async function searchProducts(query, locationId, limit = 20) {
   if (!res.ok) return [];
 
   const data = await res.json();
-  return (data.data ?? []).map(p => {
+  const pricedProducts = (data.data ?? []).map(p => {
     const item = p.items?.[0] ?? {};
     const regularPrice = item.price?.regular;
     const promoPrice = item.price?.promo;
@@ -112,6 +111,26 @@ async function searchProducts(query, locationId, limit = 20) {
   })
   .filter(p => p.priceValue != null)
   .sort((a, b) => a.priceValue - b.priceValue);
+
+  const relevantProducts = pricedProducts.filter(productMatchesQuery(query));
+  return relevantProducts.length > 0 ? relevantProducts : pricedProducts;
 }
 
 module.exports = { findNearestStore, searchProducts };
+
+function productMatchesQuery(query) {
+  const tokens = String(query)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .map(token => token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token);
+
+  return product => {
+    const haystack = [product.name, product.brand, product.size]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+
+    return tokens.every(token => haystack.includes(token));
+  };
+}

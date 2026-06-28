@@ -75,17 +75,27 @@ export default function ResultsScreen() {
         setError('No Kroger stores found near you.');
         return;
       }
-      const nearest = stores[0];
-      setStore(nearest);
+      let fallbackStore = stores[0];
+      setStore(fallbackStore);
 
-      const rawItems = await searchGroceries(query, nearest.locationId);
-      const items: GroceryItem[] = (rawItems ?? []).map((item: GroceryItem) => ({
-        ...item,
-        storeName: nearest.name,
-        storeId: nearest.locationId,
-        storeAddress: nearest.address,
-      }));
-      setResults(items);
+      for (const candidate of stores) {
+        const rawItems = await searchGroceries(query, candidate.locationId);
+        const items: GroceryItem[] = (rawItems ?? []).map((item: GroceryItem) => ({
+          ...item,
+          storeName: candidate.name,
+          storeId: candidate.locationId,
+          storeAddress: candidate.address,
+        }));
+
+        if (items.length > 0) {
+          setStore(candidate);
+          setResults(items);
+          return;
+        }
+      }
+
+      setStore(fallbackStore);
+      setResults([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
