@@ -67,13 +67,23 @@ async function findNearestStore(lat, lng, radiusMiles = 10) {
 // Search products at a specific store — returns array of product results
 async function searchProducts(query, locationId, limit = 20) {
   const token = await getToken();
+  const searchLimit = Math.max(limit, 50);
+
+  for (const term of buildSearchTerms(query)) {
+    const products = await fetchProductsForTerm(token, term, locationId, searchLimit);
+    if (products.length > 0) return products;
+  }
+
+  return [];
+}
+
+async function fetchProductsForTerm(token, term, locationId, limit) {
   const params = new URLSearchParams({
-    'filter.term': query,
+    'filter.term': term,
     'filter.limit': String(limit),
   });
   if (locationId) {
     params.set('filter.locationId', locationId);
-    params.set('filter.fulfillment', 'ais');
   }
 
   const res = await fetch(`${KROGER_BASE}/products?${params}`, {
@@ -112,7 +122,7 @@ async function searchProducts(query, locationId, limit = 20) {
   .filter(p => p.priceValue != null)
   .sort((a, b) => a.priceValue - b.priceValue);
 
-  const relevantProducts = pricedProducts.filter(productMatchesQuery(query));
+  const relevantProducts = pricedProducts.filter(productMatchesQuery(term));
   return relevantProducts.length > 0 ? relevantProducts : pricedProducts;
 }
 
@@ -134,3 +144,36 @@ function productMatchesQuery(query) {
     return tokens.every(token => haystack.includes(token));
   };
 }
+
+function buildSearchTerms(query) {
+  const tokens = String(query)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(token => token.length > 2);
+  const terms = [String(query).trim()];
+
+  if (tokens.length >= 2) {
+    terms.push(tokens.slice(-2).join(' '));
+  }
+
+  const productToken = tokens.find(token => !GENERIC_PRODUCT_MODIFIERS.has(token));
+  if (productToken) terms.push(productToken);
+
+  return [...new Set(terms.filter(Boolean))];
+}
+
+const GENERIC_PRODUCT_MODIFIERS = new Set([
+  'italian',
+  'style',
+  'fresh',
+  'organic',
+  'natural',
+  'large',
+  'small',
+  'sliced',
+  'shredded',
+  'whole',
+  'low',
+  'fat',
+  'free',
+]);
