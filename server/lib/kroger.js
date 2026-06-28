@@ -90,7 +90,10 @@ async function fetchProductsForTerm(token, term, locationId, limit) {
     headers: { Authorization: `Bearer ${token}` },
   });
 
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`Kroger product search failed ${res.status}: ${text}`);
+  }
 
   const data = await res.json();
   const pricedProducts = (data.data ?? []).map(p => {
@@ -122,8 +125,7 @@ async function fetchProductsForTerm(token, term, locationId, limit) {
   .filter(p => p.priceValue != null)
   .sort((a, b) => a.priceValue - b.priceValue);
 
-  const relevantProducts = pricedProducts.filter(productMatchesQuery(term));
-  return relevantProducts.length > 0 ? relevantProducts : pricedProducts;
+  return pricedProducts.filter(productMatchesQuery(term));
 }
 
 module.exports = { findNearestStore, searchProducts };
