@@ -30,6 +30,7 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "prewarm:results": "CONCURRENCY=1 ROUNDS=1 node tests/load/results-smoke.mjs",
     "test:results": "node tests/load/results-smoke.mjs",
     "stress:results": "CONCURRENCY=10 ROUNDS=5 node tests/load/results-smoke.mjs"
   },
