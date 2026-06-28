@@ -32,7 +32,9 @@ export default function HomeScreen() {
   const { isAuthenticated } = useAuth();
   const [location, setLocation] = useState('');
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [manualLocation, setManualLocation] = useState(false);
   const [locating, setLocating] = useState(true);
+  const [resolvingSearchLocation, setResolvingSearchLocation] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
   const { history, push: pushHistory, remove: removeHistory } = useSearchHistory();
@@ -47,10 +49,12 @@ export default function HomeScreen() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         setLocation('Oakland, CA');
+        setManualLocation(false);
         return;
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setGpsCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      setManualLocation(false);
       const [geo] = await Location.reverseGeocodeAsync({
         latitude: pos.coords.latitude,
         longitude: pos.coords.longitude,
@@ -64,9 +68,24 @@ export default function HomeScreen() {
       }
     } catch {
       setLocation('Oakland, CA');
+      setManualLocation(false);
     } finally {
       setLocating(false);
     }
+  }
+
+  async function resolveSearchCoords() {
+    if (!manualLocation && gpsCoords) return gpsCoords;
+
+    const trimmedLocation = location.trim();
+    if (trimmedLocation) {
+      const [match] = await Location.geocodeAsync(trimmedLocation);
+      if (match) {
+        return { lat: match.latitude, lng: match.longitude };
+      }
+    }
+
+    return { lat: 37.8044, lng: -122.2712 };
   }
 
   function handleLocationTap() {
@@ -75,7 +94,10 @@ export default function HomeScreen() {
         'Change Location',
         'Enter a city or zip code',
         (t) => {
-          if (t?.trim()) setLocation(t.trim());
+          if (t?.trim()) {
+            setLocation(t.trim());
+            setManualLocation(true);
+          }
         },
         'plain-text',
         location,
@@ -88,13 +110,20 @@ export default function HomeScreen() {
     }
   }
 
-  function handleSearch(query: string) {
+  async function handleSearch(query: string) {
     const q = query.trim();
     if (!q) return;
-    const lat = gpsCoords?.lat ?? 37.8044;
-    const lng = gpsCoords?.lng ?? -122.2712;
-    pushHistory(q);
-    navigation.navigate('Results', { query: q, lat, lng });
+    setResolvingSearchLocation(true);
+    try {
+      const { lat, lng } = await resolveSearchCoords();
+      pushHistory(q);
+      navigation.navigate('Results', { query: q, lat, lng });
+    } catch {
+      pushHistory(q);
+      navigation.navigate('Results', { query: q, lat: 37.8044, lng: -122.2712 });
+    } finally {
+      setResolvingSearchLocation(false);
+    }
   }
 
   return (
@@ -232,13 +261,15 @@ export default function HomeScreen() {
       {/* Search CTA */}
       <View style={[styles.ctaWrap, { backgroundColor: bg }]}>
         <TouchableOpacity
-          style={[styles.cta, { backgroundColor: accent }, (locating || !searchQuery.trim()) && styles.ctaDisabled]}
-          disabled={locating || !searchQuery.trim()}
+          style={[styles.cta, { backgroundColor: accent }, (locating || resolvingSearchLocation || !searchQuery.trim()) && styles.ctaDisabled]}
+          disabled={locating || resolvingSearchLocation || !searchQuery.trim()}
           onPress={() => handleSearch(searchQuery)}
           accessibilityRole="button"
         >
           <Text style={[styles.ctaText, { color: accentLight }]}>
-            {searchQuery.trim() ? `Search "${searchQuery.trim()}"` : 'Type something to search'}
+            {resolvingSearchLocation
+              ? 'Finding stores...'
+              : searchQuery.trim() ? `Search "${searchQuery.trim()}"` : 'Type something to search'}
           </Text>
         </TouchableOpacity>
       </View>
