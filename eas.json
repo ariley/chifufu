@@ -16,14 +16,5 @@
     "production": {
       "autoIncrement": true
     }
-  },
-  "submit": {
-    "production": {
-      "ios": {
-        "appleId": "ariley@gmail.com",
-        "ascAppId": "",
-        "appleTeamId": ""
-      }
-    }
   }
 }
