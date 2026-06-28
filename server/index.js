@@ -11,6 +11,41 @@ app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
+const resultsCache = new Map();
+
+function normalizeCachePart(value) {
+  return String(value ?? '').trim().toLowerCase();
+}
+
+function coordinateCachePart(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number.toFixed(3) : '';
+}
+
+function getResultsCacheKey({ location, category, searchQuery, lat, lng }) {
+  return [
+    normalizeCachePart(location),
+    normalizeCachePart(category),
+    normalizeCachePart(searchQuery),
+    coordinateCachePart(lat),
+    coordinateCachePart(lng),
+  ].join('|');
+}
+
+function getCachedResults(key) {
+  const cached = resultsCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.createdAt > RESULTS_CACHE_TTL_MS) {
+    resultsCache.delete(key);
+    return null;
+  }
+  return cached.items;
+}
+
+function setCachedResults(key, items) {
+  resultsCache.set(key, { createdAt: Date.now(), items });
+}
 
 // ── Haversine distance in km ───────────────────────────────────
 function haversine(lat1, lng1, lat2, lng2) {
@@ -309,6 +344,14 @@ app.post('/api/results', async (req, res) => {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured on server' });
   }
 
+  const cacheKey = getResultsCacheKey({ location, category, searchQuery, lat, lng });
+  const cached = getCachedResults(cacheKey);
+  if (cached) {
+    res.set('X-Chifufu-Cache', 'HIT');
+    return res.json(cached);
+  }
+  res.set('X-Chifufu-Cache', 'MISS');
+
   // 1. Resolve coordinates — use GPS if provided, else geocode the string
   let coords = (lat && lng) ? { lat, lng } : await geocodeLocation(location);
 
@@ -377,6 +420,7 @@ app.post('/api/results', async (req, res) => {
   });
 
   items.sort((a, b) => a.priceValue - b.priceValue);
+  setCachedResults(cacheKey, items);
   res.json(items);
 });
 
