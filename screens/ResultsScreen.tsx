@@ -259,7 +259,36 @@ export default function ResultsScreen() {
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListHeaderComponent={
+            <View style={styles.priceSectionHeader}>
+              <Text style={[styles.storeHeader, { color: textTer }]}>
+                Live item prices
+              </Text>
+            </View>
+          }
+          ListFooterComponent={
+            groceryStores.length > 0 ? (
+              <View style={styles.storeSection}>
+                <Text style={[styles.storeHeader, { color: textTer }]}>
+                  Grocery stores near {locationLabel || 'you'}
+                </Text>
+                {groceryStores.slice(0, 8).map(renderStoreCard)}
+              </View>
+            ) : null
+          }
+          ListEmptyComponent={
             <View>
+              <View style={styles.emptyWrap}>
+                <Text style={styles.emptyIcon}>🔍</Text>
+                <Text style={[styles.emptyTitle, { color: text }]}>
+                  No live prices for "{query}"
+                </Text>
+                <Text style={[styles.emptyMsg, { color: textSec }]}>
+                  near {resultsLocationLabel}
+                </Text>
+                <Text style={[styles.emptyHint, { color: textTer }]}>
+                  Nearby stores are listed below. Live item prices are only available where a store API provides them.
+                </Text>
+              </View>
               {groceryStores.length > 0 ? (
                 <View style={styles.storeSection}>
                   <Text style={[styles.storeHeader, { color: textTer }]}>
@@ -268,23 +297,6 @@ export default function ResultsScreen() {
                   {groceryStores.slice(0, 8).map(renderStoreCard)}
                 </View>
               ) : null}
-              <Text style={[styles.storeHeader, { color: textTer, marginTop: groceryStores.length > 0 ? 18 : 0 }]}>
-                Live item prices
-              </Text>
-            </View>
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyWrap}>
-              <Text style={styles.emptyIcon}>🔍</Text>
-              <Text style={[styles.emptyTitle, { color: text }]}>
-                No live prices for "{query}"
-              </Text>
-              <Text style={[styles.emptyMsg, { color: textSec }]}>
-                near {resultsLocationLabel}
-              </Text>
-              <Text style={[styles.emptyHint, { color: textTer }]}>
-                Nearby stores are listed above. Live item prices are only available where a store API provides them.
-              </Text>
             </View>
           }
         />
@@ -387,6 +399,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textTransform: 'uppercase',
   },
+  priceSectionHeader: { marginBottom: 2 },
   storeSection: { marginBottom: 2 },
   storeCard: {
     borderRadius: 10,
