@@ -24,8 +24,9 @@ type Route = RouteProp<RootStackParamList, 'Results'>;
 const SALE_GREEN = '#1D9E75';
 
 function toGroceryItem(option: PricedStoreOption): GroceryItem {
+  const storeKey = `${option.name}-${option.address ?? 'unknown'}`;
   return {
-    id: option.id,
+    id: `${storeKey}-${option.id}`,
     upc: '',
     name: option.description,
     brand: '',
@@ -39,7 +40,7 @@ function toGroceryItem(option: PricedStoreOption): GroceryItem {
     badges: option.badges ?? [],
     rating: option.rating,
     storeName: option.name,
-    storeId: `${option.name}-${option.address ?? option.id}`,
+    storeId: storeKey,
     storeAddress: option.address,
   };
 }
