@@ -13,6 +13,7 @@ const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
 const resultsCache = new Map();
+const pendingResults = new Map();
 
 function normalizeCachePart(value) {
   return String(value ?? '').trim().toLowerCase();
@@ -45,6 +46,80 @@ function getCachedResults(key) {
 
 function setCachedResults(key, items) {
   resultsCache.set(key, { createdAt: Date.now(), items });
+}
+
+async function generateResults({ location, category, searchQuery, lat, lng }) {
+  // 1. Resolve coordinates — use GPS if provided, else geocode the string
+  let coords = (lat && lng) ? { lat, lng } : await geocodeLocation(location);
+
+  // 2. Fetch real nearby places from Google Places
+  let places = [];
+  if (coords) {
+    places = await queryGooglePlaces(coords.lat, coords.lng, category);
+  }
+
+  // 3. Build prompt — real places if we have enough, else fall back
+  const prompt = places.length >= 3
+    ? buildPromptWithPlaces(location, category, places, searchQuery)
+    : buildPromptFallback(location, category, searchQuery);
+
+  // 4. Call Claude
+  let anthropicResp;
+  try {
+    anthropicResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+  } catch (_) {
+    throw new Error('Failed to reach Anthropic API');
+  }
+
+  if (!anthropicResp.ok) {
+    const body = await anthropicResp.text().catch(() => '');
+    throw new Error(`Anthropic error ${anthropicResp.status}: ${body}`);
+  }
+
+  const anthropicData = await anthropicResp.json();
+  const rawText = anthropicData?.content?.[0]?.text ?? '';
+  const cleaned = rawText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+
+  let items;
+  try {
+    items = JSON.parse(cleaned);
+  } catch (_) {
+    const error = new Error('Failed to parse results from AI');
+    error.raw = cleaned;
+    throw error;
+  }
+
+  // 5. Attach real coordinates from Google Places results by matching store name
+  const placeMap = new Map(places.map(p => [p.name.toLowerCase(), p]));
+  items = items.map(item => {
+    const match = placeMap.get(item.name?.toLowerCase());
+    if (match) {
+      return {
+        ...item,
+        lat: match.lat,
+        lng: match.lng,
+        rating: match.rating,
+        address: item.address || match.address || undefined,
+        distance: item.distance || `${match.distMi} mi`,
+      };
+    }
+    return item;
+  });
+
+  items.sort((a, b) => a.priceValue - b.priceValue);
+  return items;
 }
 
 // ── Haversine distance in km ───────────────────────────────────
@@ -350,78 +425,31 @@ app.post('/api/results', async (req, res) => {
     res.set('X-Chifufu-Cache', 'HIT');
     return res.json(cached);
   }
-  res.set('X-Chifufu-Cache', 'MISS');
 
-  // 1. Resolve coordinates — use GPS if provided, else geocode the string
-  let coords = (lat && lng) ? { lat, lng } : await geocodeLocation(location);
-
-  // 2. Fetch real nearby places from Google Places
-  let places = [];
-  if (coords) {
-    places = await queryGooglePlaces(coords.lat, coords.lng, category);
-  }
-
-  // 3. Build prompt — real places if we have enough, else fall back
-  const prompt = places.length >= 3
-    ? buildPromptWithPlaces(location, category, places, searchQuery)
-    : buildPromptFallback(location, category, searchQuery);
-
-  // 4. Call Claude
-  let anthropicResp;
-  try {
-    anthropicResp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-  } catch (_) {
-    return res.status(502).json({ error: 'Failed to reach Anthropic API' });
-  }
-
-  if (!anthropicResp.ok) {
-    const body = await anthropicResp.text().catch(() => '');
-    return res.status(502).json({ error: `Anthropic error ${anthropicResp.status}`, detail: body });
-  }
-
-  const anthropicData = await anthropicResp.json();
-  const rawText = anthropicData?.content?.[0]?.text ?? '';
-  const cleaned = rawText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-
-  let items;
-  try {
-    items = JSON.parse(cleaned);
-  } catch (_) {
-    return res.status(502).json({ error: 'Failed to parse results from AI', raw: cleaned });
-  }
-
-  // 5. Attach real coordinates from Overpass results by matching store name
-  const placeMap = new Map(places.map(p => [p.name.toLowerCase(), p]));
-  items = items.map(item => {
-    const match = placeMap.get(item.name?.toLowerCase());
-    if (match) {
-      return {
-        ...item,
-        lat: match.lat,
-        lng: match.lng,
-        rating: match.rating,
-        address: item.address || match.address || undefined,
-        distance: item.distance || `${match.distMi} mi`,
-      };
+  const pending = pendingResults.get(cacheKey);
+  if (pending) {
+    res.set('X-Chifufu-Cache', 'WAIT');
+    try {
+      return res.json(await pending);
+    } catch (err) {
+      console.error('results pending error:', err.message);
+      return res.status(502).json({ error: err.message });
     }
-    return item;
-  });
+  }
 
-  items.sort((a, b) => a.priceValue - b.priceValue);
-  setCachedResults(cacheKey, items);
-  res.json(items);
+  res.set('X-Chifufu-Cache', 'MISS');
+  const generation = generateResults({ location, category, searchQuery, lat, lng });
+  pendingResults.set(cacheKey, generation);
+  try {
+    const items = await generation;
+    setCachedResults(cacheKey, items);
+    res.json(items);
+  } catch (err) {
+    console.error('results error:', err.message);
+    res.status(502).json({ error: err.message, raw: err.raw });
+  } finally {
+    pendingResults.delete(cacheKey);
+  }
 });
 
 app.listen(PORT, () => {
