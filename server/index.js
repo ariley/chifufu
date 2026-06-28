@@ -49,7 +49,7 @@ async function queryGooglePlaces(lat, lng, category) {
   if (!apiKey) return [];
 
   const type = GOOGLE_PLACE_TYPES[category] ?? 'restaurant';
-  const radius = category === 'pet-stores' ? 8000 : 3000;
+  const radius = category === 'pet-stores' || category === 'grocery' ? 8000 : 3000;
   const url = `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lng}&radius=${radius}&type=${type}&key=${apiKey}`;
 
   try {
@@ -84,6 +84,18 @@ async function queryGooglePlaces(lat, lng, category) {
     console.error('Google Places fetch error:', err.message);
     return [];
   }
+}
+
+function filterPlacesForLocation(places, locationLabel) {
+  const city = locationLabel?.split(',')[0]?.trim().toLowerCase();
+  if (!city) return places;
+
+  const cityPlaces = places.filter(place => {
+    const text = `${place.name} ${place.address}`.toLowerCase();
+    return text.includes(city);
+  });
+
+  return cityPlaces.length > 0 ? cityPlaces : places;
 }
 
 // ── Prompt builders ────────────────────────────────────────────
@@ -253,6 +265,19 @@ app.get('/api/kroger/stores', async (req, res) => {
     res.json(stores);
   } catch (err) {
     console.error('kroger/stores error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ── Grocery: real nearby grocery stores via Google Places ──────
+app.get('/api/grocery/stores', async (req, res) => {
+  const { lat, lng, location } = req.query;
+  if (!lat || !lng) return res.status(400).json({ error: 'lat and lng required' });
+  try {
+    const places = await queryGooglePlaces(parseFloat(lat), parseFloat(lng), 'grocery');
+    res.json(filterPlacesForLocation(places, location));
+  } catch (err) {
+    console.error('grocery/stores error:', err.message);
     res.status(502).json({ error: err.message });
   }
 });

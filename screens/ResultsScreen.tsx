@@ -14,8 +14,8 @@ import { useThemeContext } from '../contexts/ThemeContext';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
-import { GroceryItem, RootStackParamList } from '../types';
-import { fetchNearbyStores, searchGroceries } from '../lib/api';
+import { GroceryItem, GroceryStore, RootStackParamList } from '../types';
+import { fetchNearbyGroceryStores, fetchNearbyStores, searchGroceries } from '../lib/api';
 import { useBucketContext } from '../App';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Results'>;
@@ -41,6 +41,7 @@ export default function ResultsScreen() {
   const { bg, bgSec, text, textSec, textTer, border, accent, accentLight } = useThemeContext();
 
   const [results, setResults] = useState<GroceryItem[]>([]);
+  const [groceryStores, setGroceryStores] = useState<GroceryStore[]>([]);
   const [store, setStore] = useState<StoreInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,11 +69,19 @@ export default function ResultsScreen() {
     setLoading(true);
     setError(null);
     setResults([]);
+    setGroceryStores([]);
     setStore(null);
     try {
-      const stores: StoreInfo[] = await fetchNearbyStores(lat, lng);
+      const [nearbyGroceryStores, stores]: [GroceryStore[], StoreInfo[]] = await Promise.all([
+        fetchNearbyGroceryStores(lat, lng, locationLabel),
+        fetchNearbyStores(lat, lng),
+      ]);
+      setGroceryStores(nearbyGroceryStores ?? []);
+
       if (!stores || stores.length === 0) {
-        setError('No Kroger stores found near you.');
+        if (!nearbyGroceryStores || nearbyGroceryStores.length === 0) {
+          setError('No grocery stores found near you.');
+        }
         return;
       }
       const preferredStores = preferStoresForLocation(stores, locationLabel);
@@ -102,11 +111,33 @@ export default function ResultsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [query, lat, lng]);
+  }, [query, lat, lng, locationLabel]);
 
   useEffect(() => {
     loadResults();
   }, [loadResults]);
+
+  function renderStoreCard(storeItem: GroceryStore) {
+    return (
+      <View key={`${storeItem.name}-${storeItem.address}`} style={[styles.storeCard, { backgroundColor: bgSec, borderColor: border }]}>
+        <View style={styles.storeCardTop}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.storeCardName, { color: text }]} numberOfLines={1}>
+              {storeItem.name}
+            </Text>
+            <Text style={[styles.storeCardAddress, { color: textSec }]} numberOfLines={1}>
+              {storeItem.address}
+            </Text>
+          </View>
+          <Text style={[styles.storeDistance, { color: accent }]}>{storeItem.distMi} mi</Text>
+        </View>
+        <Text style={[styles.storeMeta, { color: textTer }]}>
+          {storeItem.rating ? `${storeItem.rating.toFixed(1)} stars` : 'Grocery store'}
+          {storeItem.priceLevel != null ? ` · ${'$'.repeat(Math.max(1, storeItem.priceLevel))}` : ''}
+        </Text>
+      </View>
+    );
+  }
 
   function renderCard({ item }: { item: GroceryItem }) {
     const inList = isInBucket(item.id);
@@ -229,17 +260,27 @@ export default function ResultsScreen() {
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListHeaderComponent={
-            store && results.length > 0 ? (
-              <Text style={[styles.storeHeader, { color: textTer }]}>
-                Results at {store.name}
+            <View>
+              {groceryStores.length > 0 ? (
+                <View style={styles.storeSection}>
+                  <Text style={[styles.storeHeader, { color: textTer }]}>
+                    Grocery stores near {locationLabel || 'you'}
+                  </Text>
+                  {groceryStores.slice(0, 8).map(renderStoreCard)}
+                </View>
+              ) : null}
+              <Text style={[styles.storeHeader, { color: textTer, marginTop: groceryStores.length > 0 ? 18 : 0 }]}>
+                {store && results.length > 0
+                  ? `Live prices at ${store.name}`
+                  : 'Live Kroger-family prices'}
               </Text>
-            ) : null
+            </View>
           }
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <Text style={styles.emptyIcon}>🔍</Text>
               <Text style={[styles.emptyTitle, { color: text }]}>
-                No results for "{query}"
+                No live prices for "{query}"
               </Text>
               {store ? (
                 <Text style={[styles.emptyMsg, { color: textSec }]}>
@@ -247,7 +288,7 @@ export default function ResultsScreen() {
                 </Text>
               ) : null}
               <Text style={[styles.emptyHint, { color: textTer }]}>
-                Try a different search term.
+                Nearby stores are listed above. Live item prices are only available where a store API provides them.
               </Text>
             </View>
           }
@@ -351,6 +392,22 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     textTransform: 'uppercase',
   },
+  storeSection: { marginBottom: 2 },
+  storeCard: {
+    borderRadius: 10,
+    borderWidth: 0.5,
+    padding: 12,
+    marginBottom: 8,
+  },
+  storeCardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  storeCardName: { fontSize: 15, fontWeight: '600' },
+  storeCardAddress: { fontSize: 12, marginTop: 3 },
+  storeDistance: { fontSize: 13, fontWeight: '600' },
+  storeMeta: { fontSize: 11, marginTop: 8 },
   separator: { height: 10 },
   card: {
     borderRadius: 12,

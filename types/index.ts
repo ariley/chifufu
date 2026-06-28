@@ -17,6 +17,17 @@ export interface GroceryItem {
   storeAddress?: string;
 }
 
+export interface GroceryStore {
+  name: string;
+  type: string;
+  address: string;
+  lat: number;
+  lng: number;
+  distMi: string;
+  rating?: number;
+  priceLevel?: number;
+}
+
 export interface BucketItem extends GroceryItem {
   quantity: number;
 }
