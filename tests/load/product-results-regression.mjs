@@ -87,7 +87,10 @@ async function assertDistinctProductRows(searchQuery) {
 }
 
 await assertDistinctProductRows('Norwegian cream cheese');
+await assertDistinctProductRows('Norwegian crème cheese');
 await assertDistinctProductRows('Eggs');
+await assertDistinctProductRows('Milk');
+await assertDistinctProductRows('Carrots');
 await assertDistinctProductRows('Orange juice with pulp');
 const orangeJuiceItems = await postResults('Orange juice with pulp');
 if (orangeJuiceItems.some(item => /\b(no pulp|pulp free|sans pulpe)\b/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {

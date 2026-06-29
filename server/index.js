@@ -11,7 +11,7 @@ app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const RESULTS_CACHE_VERSION = 'products-v6-provider-catalog';
+const RESULTS_CACHE_VERSION = 'products-v7-provider-catalog';
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
 const PRODUCT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const resultsCache = new Map();
@@ -21,7 +21,17 @@ const pendingResults = new Map();
 const backgroundRefreshes = new Map();
 
 function normalizeCachePart(value) {
-  return String(value ?? '').trim().toLowerCase();
+  return normalizeForSearch(value);
+}
+
+function normalizeForSearch(value) {
+  return String(value ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\bcreme\b/gi, 'cream')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
 }
 
 function coordinateCachePart(value) {
@@ -168,6 +178,7 @@ const DEFAULT_STORES = [
 const QUERY_PRICE_HINTS = [
   { pattern: /\beggs?\b/i, name: 'eggs', size: 'dozen', base: 3.49 },
   { pattern: /\bmilk\b/i, name: 'milk', size: 'half gallon', base: 3.29 },
+  { pattern: /\bcarrots?\b/i, name: 'carrots', size: '1 lb bag', base: 1.99 },
   { pattern: /\bbread\b/i, name: 'bread', size: 'loaf', base: 3.19 },
   { pattern: /\bchicken\b/i, name: 'chicken', size: 'per lb', base: 4.49 },
   { pattern: /\bfeta\b/i, name: 'feta', size: '8 oz', base: 5.99 },
@@ -190,8 +201,12 @@ function getPriceHint(searchQuery) {
 }
 
 function productDetailQuery(searchQuery) {
-  const query = String(searchQuery || '').trim();
+  const query = cleanSearchQuery(searchQuery);
   return query || getPriceHint(searchQuery).name;
+}
+
+function cleanSearchQuery(searchQuery) {
+  return normalizeForSearch(searchQuery).replace(/\s+/g, ' ').trim();
 }
 
 function nutrientValue(nutriments, key, unit = '') {
@@ -297,8 +312,8 @@ function isRelevantProductCandidate(product, searchQuery, originalSearchQuery = 
   if (originalQuery.includes('with pulp') && /\b(no pulp|pulp free|sans pulpe)\b/.test(rawText)) return false;
   if (text.includes(query)) return true;
 
-  if (query === 'israeli feta') {
-    return /\bisraeli feta\b/.test(text);
+  if (query.includes('israeli') && query.includes('feta')) {
+    return /\bisraeli\b/.test(text) && /\bfeta\b/.test(text);
   }
 
   const tokens = query
@@ -309,7 +324,7 @@ function isRelevantProductCandidate(product, searchQuery, originalSearchQuery = 
 }
 
 function normalizeSearchTokens(value) {
-  return normalizeCachePart(value)
+  return normalizeForSearch(value)
     .split(/[^a-z0-9]+/)
     .filter(Boolean)
     .map(token => token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token);
@@ -331,16 +346,23 @@ function normalizeTags(tags) {
 
 function buildOpenFoodFactsTerms(searchQuery) {
   const query = productDetailQuery(searchQuery);
-  const normalized = normalizeCachePart(query);
+  const normalized = normalizeForSearch(query);
   const hint = getPriceHint(query);
   const terms = [];
   const tokens = normalized.split(/[^a-z0-9]+/).filter(token => token.length > 2);
   const coreTokens = tokens.filter(token => !PRODUCT_SEARCH_MODIFIERS.has(token));
+  terms.push(query);
   if (coreTokens.length > 0 && coreTokens.length !== tokens.length) {
     terms.push(coreTokens.join(' '));
   }
   if (hint.name && normalizeCachePart(hint.name) !== normalized) {
     terms.push(hint.name);
+  }
+  if (tokens.includes('cream') && tokens.includes('cheese')) {
+    terms.push('cream cheese', 'spreadable cheese');
+  }
+  if (tokens.includes('carrot')) {
+    terms.push('carrots', 'baby carrots');
   }
   if (coreTokens.length > 1) {
     terms.push(coreTokens.slice(-2).join(' '));
@@ -348,7 +370,6 @@ function buildOpenFoodFactsTerms(searchQuery) {
   if (coreTokens.includes('orange') && coreTokens.includes('juice') && coreTokens.includes('pulp')) {
     terms.push('medium pulp orange juice', 'low pulp orange juice');
   }
-  terms.push(query);
   if (coreTokens.length === 1) {
     if (/cheese|feta|provolone|cheddar|mozzarella/.test(normalized)) {
       terms.push(`${coreTokens[coreTokens.length - 1]} cheese`);
@@ -366,6 +387,7 @@ const PRODUCT_SEARCH_MODIFIERS = new Set([
   'italian',
   'israeli',
   'style',
+  'creme',
   'with',
   'without',
   'organic',
@@ -617,7 +639,7 @@ async function searchKrogerPricedResults({ searchQuery, lat, lng, radiusMiles = 
   });
 
   return rows
-    .filter(row => row.priceValue != null)
+    .filter(row => row.priceValue != null && hasRealProductIdentity(row) && hasUsableProductImage(row))
     .sort((a, b) => a.relevanceRank - b.relevanceRank || a.priceValue - b.priceValue)
     .slice(0, limit);
 }

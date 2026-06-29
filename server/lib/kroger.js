@@ -132,8 +132,7 @@ async function fetchProductsForTerm(token, term, locationId, limit) {
 module.exports = { findNearestStore, searchProducts };
 
 function productMatchesQuery(query) {
-  const rawTokens = String(query)
-    .toLowerCase()
+  const rawTokens = normalizeForSearch(query)
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
   const tokens = rawTokens.map(token => token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token);
@@ -142,8 +141,15 @@ function productMatchesQuery(query) {
     const productText = [product.name, product.brand, product.size]
       .filter(Boolean)
       .join(' ')
-      .toLowerCase();
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\bcreme\b/g, 'cream');
+    const normalizedQuery = normalizeForSearch(query);
     if (/\bwith pulp\b/.test(String(query).toLowerCase()) && /\b(no pulp|pulp free|sans pulpe)\b/.test(productText)) {
+      return false;
+    }
+    if (normalizedQuery === 'milk' && /\b(milk-bone|milk dud|candy|chocolate|cookie|biscuit|dog|snack|bone)\b/.test(productText)) {
       return false;
     }
     const rawHaystackTokens = new Set(productText
@@ -163,18 +169,16 @@ function productMatchesQuery(query) {
 }
 
 function buildSearchTerms(query) {
-  const tokens = String(query)
-    .toLowerCase()
+  const normalizedQuery = normalizeForSearch(query);
+  const tokens = normalizedQuery
     .split(/[^a-z0-9]+/)
     .filter(token => token.length > 2);
-  const terms = [String(query).trim()];
+  const terms = [normalizedQuery];
   const coreTokens = tokens.filter(token => !GENERIC_PRODUCT_MODIFIERS.has(token));
 
   if (tokens.length >= 2) {
     const phrase = tokens.slice(-2).join(' ');
-    if (!GENERIC_FALLBACK_PHRASES.has(phrase)) {
-      terms.push(phrase);
-    }
+    terms.push(phrase);
   }
 
   if (coreTokens.length >= 2) {
@@ -187,8 +191,8 @@ function buildSearchTerms(query) {
 }
 
 function productRelevanceRank(query, name, brand, size) {
-  const queryTokens = String(query).toLowerCase().split(/[^a-z0-9]+/).filter(token => token.length > 2);
-  const productTokens = [name, brand, size].filter(Boolean).join(' ').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const queryTokens = normalizeForSearch(query).split(/[^a-z0-9]+/).filter(token => token.length > 2);
+  const productTokens = normalizeForSearch([name, brand, size].filter(Boolean).join(' ')).split(/[^a-z0-9]+/).filter(Boolean);
   const productText = productTokens.join(' ');
   const queryText = queryTokens.join(' ');
   const extraTokens = Math.max(0, productTokens.length - queryTokens.length);
@@ -197,10 +201,6 @@ function productRelevanceRank(query, name, brand, size) {
   if (queryText && productText.includes(` ${queryText} `)) return 20 + extraTokens;
   return 100 + extraTokens;
 }
-
-const GENERIC_FALLBACK_PHRASES = new Set([
-  'cream cheese',
-]);
 
 const GENERIC_PRODUCT_MODIFIERS = new Set([
   'italian',
@@ -225,3 +225,13 @@ const GENERIC_PRODUCT_MODIFIERS = new Set([
   'fat',
   'free',
 ]);
+
+function normalizeForSearch(value) {
+  return String(value ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\bcreme\b/gi, 'cream')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
