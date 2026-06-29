@@ -33,8 +33,12 @@ async function runScenario(scenario) {
   const cache = response.headers.get('x-chifufu-cache') ?? 'none';
   const body = await response.json().catch(() => null);
   const count = Array.isArray(body) ? body.length : 0;
-  const hasPrices = Array.isArray(body) && body.every(item => typeof item.price === 'string' && Number.isFinite(item.priceValue));
+  const hasValidPrices = Array.isArray(body) && body.every(item => {
+    if (item.price == null && item.priceValue == null) return true;
+    return typeof item.price === 'string' && Number.isFinite(item.priceValue) && item.isLivePrice === true;
+  });
   const hasStores = Array.isArray(body) && body.every(item => typeof item.name === 'string' && item.name.length > 0);
+  const hasProducts = Array.isArray(body) && body.every(item => typeof item.description === 'string' && item.description.length > 0 && item.imageUrl);
 
   return {
     searchQuery: scenario.searchQuery,
@@ -43,8 +47,9 @@ async function runScenario(scenario) {
     elapsedMs,
     cache,
     count,
-    hasPrices,
+    hasValidPrices,
     hasStores,
+    hasProducts,
   };
 }
 
@@ -66,8 +71,9 @@ async function worker(id, queue, results) {
         elapsedMs: 0,
         cache: 'error',
         count: 0,
-        hasPrices: false,
+        hasValidPrices: false,
         hasStores: false,
+        hasProducts: false,
         error: error instanceof Error ? error.message : String(error),
       });
       console.log(`[worker ${id}] ${scenario.searchQuery}: ERROR ${error instanceof Error ? error.message : String(error)}`);
@@ -85,7 +91,7 @@ await Promise.all(Array.from({ length: CONCURRENCY }, (_, index) => worker(index
 
 const latencies = results.filter(result => result.ok).map(result => result.elapsedMs);
 const failures = results.filter(result => !result.ok);
-const invalid = results.filter(result => result.ok && (!result.hasPrices || !result.hasStores || result.count === 0));
+const invalid = results.filter(result => result.ok && (!result.hasValidPrices || !result.hasStores || !result.hasProducts || result.count === 0));
 
 console.log('\nSummary');
 console.log(`base=${BASE_URL}`);

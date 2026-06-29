@@ -11,7 +11,7 @@ app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const RESULTS_CACHE_VERSION = 'products-v5-no-ai-refresh';
+const RESULTS_CACHE_VERSION = 'products-v6-provider-catalog';
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
 const PRODUCT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const resultsCache = new Map();
@@ -249,6 +249,7 @@ function mapOpenFoodFactsProduct(product, query) {
     labels: normalizeTags(product?.labels_tags),
     productUrl: product?.url || null,
     source: 'Open Food Facts',
+    categoryText: normalizeTags(product?.categories_tags).join(' '),
   };
 }
 
@@ -284,13 +285,15 @@ function isUsableProductCandidate(product) {
 }
 
 function productSearchText(product) {
-  return normalizeCachePart([product?.brand, product?.name, product?.query].filter(Boolean).join(' '));
+  return normalizeCachePart([product?.brand, product?.name, product?.productSize, product?.categoryText].filter(Boolean).join(' '));
 }
 
-function isRelevantProductCandidate(product, searchQuery) {
-  const query = normalizeCachePart(productDetailQuery(searchQuery)).replace(/[^a-z0-9]+/g, ' ').trim();
-  const text = productSearchText(product).replace(/[^a-z0-9]+/g, ' ').trim();
+function isRelevantProductCandidate(product, searchQuery, originalSearchQuery = searchQuery) {
+  const query = normalizeSearchTokens(productDetailQuery(searchQuery)).join(' ');
+  const originalQuery = normalizeSearchTokens(productDetailQuery(originalSearchQuery)).join(' ');
+  const text = normalizeSearchTokens(productSearchText(product)).join(' ');
   if (!query || !text) return false;
+  if (originalQuery.includes('with pulp') && /\b(no pulp|pulp free)\b/.test(text)) return false;
   if (text.includes(query)) return true;
 
   if (query === 'israeli feta') {
@@ -302,6 +305,13 @@ function isRelevantProductCandidate(product, searchQuery) {
     .filter(token => token.length > 2 && !['with', 'and', 'the', 'for'].includes(token));
   if (tokens.length === 0) return true;
   return tokens.every(token => text.includes(token));
+}
+
+function normalizeSearchTokens(value) {
+  return normalizeCachePart(value)
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .map(token => token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token);
 }
 
 function normalizeTags(tags) {
@@ -318,282 +328,56 @@ function normalizeTags(tags) {
     .slice(0, 8);
 }
 
-const PRODUCT_QUERY_ALIASES = new Map([
-  ['norwegian cream cheese', ['snofrisk', 'snofrisk cream cheese', 'tine cream cheese', 'tine']],
-  ['italian provolone cheese', ['italian provolone', 'provolone cheese', 'provolone']],
-  ['italian provolone', ['italian provolone cheese', 'provolone cheese', 'provolone']],
-  ['eggs', ['dozen eggs', 'large eggs', 'organic brown eggs']],
-  ['orange juice with pulp', ['orange juice with pulp', 'medium pulp orange juice', 'with pulp orange juice']],
-]);
-
-const CURATED_PRODUCT_CANDIDATES = [
-  {
-    patterns: [/norwegian cream cheese/i, /snofrisk/i, /snøfrisk/i],
-    products: [
-      {
-        query: 'TINE Snofrisk fresh spreadable cream cheese',
-        name: 'Snofrisk Fresh Spreadable Cheese',
-        brand: 'TINE',
-        productSize: '4.4 oz',
-        imageUrl: 'https://www.instacart.com/assets/domains/product-image/file/large_5fdbb4a0-fc31-4968-b555-ba6ad994267a.png',
-        ingredients: "Goat's milk, cow's cream, salt, bacterial culture.",
-        calories: '70 kcal',
-        nutrition: {
-          calories: '70 kcal',
-          fat: '7 g',
-          sugars: '1 g',
-          protein: '2 g',
-          servingSize: '1 oz',
-        },
-        productUrl: 'https://order.earthfare.com/store/earth-fare-market/products/115845-snofrisk-fresh-spreadable-cream-cheese-4-4-oz',
-        source: 'Earth Fare',
-      },
-      {
-        query: 'TINE Norwegian Cream Cheese Plain',
-        name: 'Norwegian Cream Cheese Plain',
-        brand: 'TINE',
-        productSize: '125 g',
-        imageUrl: 'https://www.tine.com/products/tine-cream-cheese/cream-cheese-natural/_/image/dffb90a7-f9c7-430a-8f36-97d278ed0996%3A7547567bdc18554e0b33fe7fe8a70faab511c7f3/width-460/TWN_Cream%20Cheese%20Naturell.png?quality=60',
-        ingredients: "Pasteurized goat's milk, pasteurized cream from cow's milk, salt, bacterial culture.",
-        calories: '243 kcal / 100g',
-        nutrition: {
-          calories: '243 kcal / 100g',
-          fat: '23 g / 100g',
-          carbs: '2.9 g / 100g',
-          sugars: '2.6 g / 100g',
-          sodium: '520 mg / 100g',
-          protein: '6.6 g / 100g',
-          servingSize: '100 g',
-        },
-        productUrl: 'https://www.tine.com/products/tine-cream-cheese/cream-cheese-natural',
-        source: 'TINE',
-      },
-    ],
-  },
-  {
-    patterns: [/israeli feta/i, /feta cheese in brine/i],
-    products: [
-      {
-        query: "Trader Joe's Israeli Feta Cheese in Brine",
-        name: 'Israeli Feta Cheese in Brine',
-        brand: "Trader Joe's",
-        productSize: '6 oz',
-        imageUrl: 'https://fig-product-images.s3.amazonaws.com/00630825.webp',
-        ingredients: "Pasteurized sheep's milk, sea salt, microbial rennet, lactic cultures.",
-        calories: '60 kcal',
-        nutrition: {
-          calories: '60 kcal',
-          fat: '4.5 g',
-          saturatedFat: '3 g',
-          transFat: '0 g',
-          cholesterol: '15 mg',
-          sodium: '320 mg',
-          carbs: '1 g',
-          sugars: '0 g',
-          protein: '5 g',
-          calcium: '60 mg',
-          iron: '0.1 mg',
-          servingSize: '1 oz',
-        },
-        allergens: ['milk'],
-        labels: ['vegetarian'],
-        productUrl: 'https://foodisgood.com/product/trader-joes-israeli-feta-in-brine/',
-        source: 'Fig / product label',
-      },
-    ],
-  },
-  {
-    patterns: [/\beggs?\b/i, /\bdozen eggs?\b/i],
-    products: [
-      {
-        query: "Trader Joe's Organic Grade A Large Brown Eggs",
-        name: 'Organic Grade A Large Brown Eggs',
-        brand: "Trader Joe's",
-        productSize: '27 oz (1 lb 11 oz) 765 g',
-        imageUrl: 'https://images.openfoodfacts.org/images/products/000/000/081/5659/front_en.3.400.jpg',
-        ingredients: null,
-        calories: '70 kcal',
-        nutrition: {
-          calories: '70 kcal',
-          fat: '5 g',
-          saturatedFat: '1.5 g',
-          transFat: '0 g',
-          cholesterol: '185 mg',
-          carbs: '0 g',
-          sugars: '0 g',
-          fiber: '0 g',
-          protein: '6 g',
-          sodium: '70 mg',
-          calcium: '30 mg',
-          iron: '0.9 mg',
-          potassium: '70 mg',
-          servingSize: '1 egg (50 g)',
-        },
-        allergens: ['egg'],
-        labels: ['organic', 'usda organic'],
-        productUrl: 'https://world.openfoodfacts.org/product/0000000815659',
-        source: 'Open Food Facts',
-      },
-      {
-        query: 'Lucerne Jumbo One Dozen Eggs',
-        name: 'Jumbo One Dozen Eggs',
-        brand: 'Lucerne',
-        productSize: '1 egg (63 g)',
-        imageUrl: 'https://images.openfoodfacts.org/images/products/002/113/003/0002/front_en.7.400.jpg',
-        ingredients: null,
-        calories: '90 kcal',
-        nutrition: {
-          calories: '90 kcal',
-          fat: '6 g',
-          saturatedFat: '2 g',
-          transFat: '0 g',
-          cholesterol: '235 mg',
-          carbs: '0 g',
-          sugars: '0 g',
-          protein: '8 g',
-          sodium: '91.5 mg',
-          calcium: '39.7 mg',
-          iron: '1.1 mg',
-          potassium: '85.1 mg',
-          servingSize: '1 egg (63 g)',
-        },
-        allergens: ['egg'],
-        labels: [],
-        productUrl: 'https://world.openfoodfacts.org/product/0021130030002',
-        source: 'Open Food Facts',
-      },
-      {
-        query: 'True Goodness Organic Pasture Raised Eggs Dozen',
-        name: 'Organic Pasture Raised Eggs Dozen',
-        brand: 'True Goodness',
-        productSize: '12 eggs',
-        imageUrl: 'https://images.openfoodfacts.org/images/products/076/023/614/0849/front_en.3.400.jpg',
-        ingredients: null,
-        calories: '70 kcal',
-        nutrition: {
-          calories: '70 kcal',
-          fat: '5 g',
-          saturatedFat: '1.5 g',
-          cholesterol: '185 mg',
-          carbs: '0 g',
-          protein: '6 g',
-          sodium: '70 mg',
-          servingSize: '1 egg (50 g)',
-        },
-        allergens: ['egg'],
-        labels: ['organic', 'usda organic'],
-        productUrl: 'https://world.openfoodfacts.org/product/0760236140849',
-        source: 'Open Food Facts',
-      },
-    ],
-  },
-  {
-    patterns: [/orange juice/i, /\bwith pulp\b/i, /\bpulp orange\b/i],
-    products: [
-      {
-        query: 'Simply Orange Medium Pulp With Calcium And Vitamin D',
-        name: 'Medium Pulp With Calcium And Vitamin D',
-        brand: 'Simply Orange',
-        productSize: '52 fl oz',
-        imageUrl: 'https://images.openfoodfacts.org/images/products/002/500/004/4830/front_en.18.400.jpg',
-        ingredients: 'Contains orange juice, less than 1% of: calcium phosphate and calcium lactate (calcium sources), vitamin D3.',
-        calories: '110 kcal',
-        nutrition: {
-          calories: '110 kcal',
-          fat: '0 g',
-          saturatedFat: '0 g',
-          transFat: '0 g',
-          cholesterol: '0 mg',
-          carbs: '26 g',
-          sugars: '23 g',
-          protein: '2 g',
-          sodium: '0 mg',
-          calcium: '146 mg',
-          potassium: '188 mg',
-          servingSize: '240 ml',
-        },
-        allergens: [],
-        labels: ['no gmos', 'no added sugar', 'non gmo project'],
-        productUrl: 'https://world.openfoodfacts.org/product/0025000044830',
-        source: 'Open Food Facts',
-      },
-      {
-        query: "Florida's Natural With Pulp Orange Juice With Calcium And Vitamin D",
-        name: 'With Pulp 100% Premium Orange Juice From Concentrate With Calcium & Vitamin D',
-        brand: "Florida's Natural",
-        productSize: '240 ml',
-        imageUrl: 'https://images.openfoodfacts.org/images/products/001/630/016/8234/front_en.4.400.jpg',
-        ingredients: 'Pasteurized orange juice, tri-calcium citrate (calcium source) and vitamin D3.',
-        calories: '110 kcal',
-        nutrition: {
-          calories: '110 kcal',
-          fat: '0 g',
-          saturatedFat: '0 g',
-          transFat: '0 g',
-          cholesterol: '0 mg',
-          carbs: '27 g',
-          sugars: '24 g',
-          fiber: '0 g',
-          protein: '2 g',
-          sodium: '4.2 mg',
-          calcium: '146 mg',
-          iron: '0.1 mg',
-          servingSize: '240 ml',
-        },
-        allergens: [],
-        labels: ['kosher', 'no gmos', 'non gmo project'],
-        productUrl: 'https://world.openfoodfacts.org/product/0016300168234',
-        source: 'Open Food Facts',
-      },
-      {
-        query: 'Minute Maid Original Low Pulp Orange Juice With Calcium & Vitamin D',
-        name: 'Original Low Pulp Orange Juice With Calcium & Vitamin D',
-        brand: 'Minute Maid',
-        productSize: '8 fl oz (240 ml)',
-        imageUrl: 'https://images.openfoodfacts.org/images/products/002/500/004/7923/front_en.9.400.jpg',
-        ingredients: '100% orange juice from concentrate with filtered water, premium concentrated orange juice, calcium phosphate and calcium lactate (calcium sources), vitamin D3.',
-        calories: '110 kcal',
-        nutrition: {
-          calories: '110 kcal',
-          fat: '0 g',
-          saturatedFat: '0 g',
-          carbs: '27 g',
-          sugars: '24 g',
-          protein: '2 g',
-          sodium: '14.4 mg',
-          calcium: '350 mg',
-          potassium: '451 mg',
-          servingSize: '8 fl oz (240 ml)',
-        },
-        allergens: [],
-        labels: ['no gmos', 'non gmo project'],
-        productUrl: 'https://world.openfoodfacts.org/product/0025000047923',
-        source: 'Open Food Facts',
-      },
-    ],
-  },
-];
-
-function getCuratedProductCandidates(searchQuery) {
-  const query = String(searchQuery || '');
-  return CURATED_PRODUCT_CANDIDATES
-    .filter(group => group.patterns.some(pattern => pattern.test(query)))
-    .flatMap(group => group.products);
-}
-
 function buildOpenFoodFactsTerms(searchQuery) {
   const query = productDetailQuery(searchQuery);
   const normalized = normalizeCachePart(query);
   const hint = getPriceHint(query);
   const terms = [];
-  const aliases = PRODUCT_QUERY_ALIASES.get(normalized);
-  if (aliases) terms.push(...aliases);
-  terms.push(query);
+  const tokens = normalized.split(/[^a-z0-9]+/).filter(token => token.length > 2);
+  const coreTokens = tokens.filter(token => !PRODUCT_SEARCH_MODIFIERS.has(token));
+  if (coreTokens.length > 0 && coreTokens.length !== tokens.length) {
+    terms.push(coreTokens.join(' '));
+  }
   if (hint.name && normalizeCachePart(hint.name) !== normalized) {
     terms.push(hint.name);
   }
+  if (coreTokens.length > 1) {
+    terms.push(coreTokens.slice(-2).join(' '));
+  }
+  if (coreTokens.includes('orange') && coreTokens.includes('juice') && coreTokens.includes('pulp')) {
+    terms.push('medium pulp orange juice', 'low pulp orange juice');
+  }
+  terms.push(query);
+  if (coreTokens.length === 1) {
+    if (/cheese|feta|provolone|cheddar|mozzarella/.test(normalized)) {
+      terms.push(`${coreTokens[coreTokens.length - 1]} cheese`);
+    }
+    if (/^eggs?$/.test(coreTokens[0])) {
+      terms.push('large eggs', 'dozen eggs');
+    }
+    terms.push(coreTokens[coreTokens.length - 1]);
+  }
   return [...new Set(terms.map(cleanText).filter(Boolean))];
 }
+
+const PRODUCT_SEARCH_MODIFIERS = new Set([
+  'norwegian',
+  'italian',
+  'israeli',
+  'style',
+  'with',
+  'without',
+  'organic',
+  'natural',
+  'fresh',
+  'large',
+  'small',
+  'low',
+  'fat',
+  'free',
+  'sliced',
+  'shredded',
+]);
 
 async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1200) {
   const cacheKey = `candidates:${normalizeCachePart(searchQuery)}:${limit}`;
@@ -602,48 +386,19 @@ async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1
 
   const seen = new Set();
   const candidates = [];
-  for (const product of getCuratedProductCandidates(searchQuery)) {
-    const key = normalizeCachePart(`${product.brand || ''}|${product.name}|${product.productSize || ''}`);
-    if (!seen.has(key)) {
-      if (isUsableProductCandidate(product)) {
-        seen.add(key);
-        candidates.push(product);
-        setCachedProductDetails(normalizeCachePart([product.brand, product.name].filter(Boolean).join(' ')), product);
-        setCachedProductDetails(normalizeCachePart(product.query), product);
-      }
-    }
-  }
-  if (candidates.length >= 2) {
-    setCachedProductCandidates(cacheKey, candidates.slice(0, limit));
-    return candidates.slice(0, limit);
-  }
-
   const terms = buildOpenFoodFactsTerms(searchQuery);
   const perTermLimit = Math.max(limit, 8);
   const deadline = Date.now() + timeoutMs;
 
   for (const term of terms) {
     if (Date.now() >= deadline || candidates.length >= limit) break;
-    const params = new URLSearchParams({
-      search_terms: term,
-      search_simple: '1',
-      action: 'process',
-      json: '1',
-      page_size: String(perTermLimit),
-      sort_by: 'unique_scans_n',
-    });
-
     try {
       const remainingMs = Math.max(250, deadline - Date.now());
-      const resp = await withTimeout(fetch(`https://world.openfoodfacts.org/cgi/search.pl?${params}`, {
-        headers: { 'User-Agent': 'Chifufu/1.0 (contact@chifufu.com)' },
-      }), remainingMs);
-      if (!resp.ok) continue;
-      const data = await resp.json();
+      const data = await fetchOpenFoodFactsSearch(term, perTermLimit, remainingMs);
       for (const product of data.products ?? []) {
         const details = mapOpenFoodFactsProduct(product, term);
         const key = normalizeCachePart(`${details.brand || ''}|${details.name}|${details.productSize || ''}`);
-        if (!isUsableProductCandidate(details) || !isRelevantProductCandidate(details, term) || seen.has(key)) continue;
+        if (!isUsableProductCandidate(details) || !isRelevantProductCandidate(details, term, searchQuery) || seen.has(key)) continue;
         seen.add(key);
         candidates.push(details);
         setCachedProductDetails(normalizeCachePart([details.brand, details.name].filter(Boolean).join(' ')), details);
@@ -657,8 +412,40 @@ async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1
     }
   }
 
-  setCachedProductCandidates(cacheKey, candidates);
+  if (candidates.length > 0) {
+    setCachedProductCandidates(cacheKey, candidates);
+  }
   return candidates;
+}
+
+async function fetchOpenFoodFactsSearch(term, limit, timeoutMs) {
+  const params = new URLSearchParams({
+    search_terms: term,
+    search_simple: '1',
+    action: 'process',
+    json: '1',
+    page_size: String(limit),
+    sort_by: 'unique_scans_n',
+  });
+  const hosts = ['world.openfoodfacts.org', 'us.openfoodfacts.org'];
+  let lastError = null;
+
+  for (const host of hosts) {
+    try {
+      const resp = await withTimeout(fetch(`https://${host}/cgi/search.pl?${params}`, {
+        headers: { 'User-Agent': 'Chifufu/1.0 (contact@chifufu.com)' },
+      }), timeoutMs);
+      if (!resp.ok) {
+        lastError = new Error(`Open Food Facts ${host} ${resp.status}`);
+        continue;
+      }
+      return await resp.json();
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  throw lastError ?? new Error('Open Food Facts search failed');
 }
 
 async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
@@ -667,30 +454,8 @@ async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
   const cached = getCachedProductDetails(cacheKey);
   if (cached) return cached;
 
-  const curated = getCuratedProductCandidates(query).find(product => {
-    const text = normalizeCachePart([product.brand, product.name, product.query].filter(Boolean).join(' '));
-    return text.includes(cacheKey) || cacheKey.includes(normalizeCachePart(product.name));
-  });
-  if (isUsableProductCandidate(curated)) {
-    setCachedProductDetails(cacheKey, curated);
-    return curated;
-  }
-
-  const params = new URLSearchParams({
-    search_terms: query,
-    search_simple: '1',
-    action: 'process',
-    json: '1',
-    page_size: '1',
-    sort_by: 'unique_scans_n',
-  });
-
   try {
-    const resp = await withTimeout(fetch(`https://world.openfoodfacts.org/cgi/search.pl?${params}`, {
-      headers: { 'User-Agent': 'Chifufu/1.0 (contact@chifufu.com)' },
-    }), timeoutMs);
-    if (!resp.ok) return null;
-    const data = await resp.json();
+    const data = await fetchOpenFoodFactsSearch(query, 3, timeoutMs);
     const product = data.products?.[0];
     if (!product) return null;
     const details = mapOpenFoodFactsProduct(product, query);
@@ -705,59 +470,81 @@ async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
   }
 }
 
-function storePriceMultiplier(place, index) {
-  const priceLevel = Number.isFinite(place.priceLevel) ? place.priceLevel : 1;
-  const rating = Number.isFinite(place.rating) ? place.rating : 4;
-  const distance = Number.parseFloat(place.distMi ?? '0') || 0;
-  return 0.88 + (priceLevel * 0.08) + (index * 0.035) + Math.max(0, rating - 4) * 0.04 + Math.min(distance, 6) * 0.015;
-}
-
-function buildInstantResults({ location, category, searchQuery, places, productCandidates }) {
-  const hint = getPriceHint(searchQuery);
-  const usablePlaces = (places.length > 0 ? places : DEFAULT_STORES).slice(0, 8);
-  const candidates = (productCandidates ?? []).filter(isUsableProductCandidate);
-  if (candidates.length === 0) return [];
-  const badgeFor = (place, index) => {
-    const badges = [];
-    if (index < 2) badges.push('deal');
-    if (Number.parseFloat(place.distMi ?? '99') <= 1.5) badges.push('close');
-    return badges.slice(0, 2);
-  };
-
-  return usablePlaces
-    .map((place, index) => {
-      const product = candidates[index % candidates.length];
-      const priceValue = Math.max(0.79, hint.base * storePriceMultiplier(place, index));
-      const rounded = Math.round(priceValue * 100) / 100;
+function buildCatalogResults({ searchQuery, productCandidates }) {
+  return (productCandidates ?? [])
+    .filter(isUsableProductCandidate)
+    .map((product, index) => {
       const detailQuery = [product.brand, product.name].filter(Boolean).join(' ') || product.query || searchQuery;
       return {
-        id: `instant-${index}-${normalizeCachePart(place.name).replace(/[^a-z0-9]+/g, '-')}`,
-        name: place.name,
-        description: product.name || `${hint.name} (${hint.size})`,
+        id: `catalog-${index}-${normalizeCachePart(detailQuery).replace(/[^a-z0-9]+/g, '-')}`,
+        name: 'Product information',
+        description: product.name,
         brand: product.brand || null,
         productSize: product.productSize || null,
-        price: `$${rounded.toFixed(2)}`,
-        priceValue: rounded,
-        distance: place.distMi ? `${place.distMi} mi` : 'nearby',
-        badges: badgeFor(place, index),
-        address: place.address || location,
+        price: null,
+        priceValue: null,
+        distance: '',
+        badges: ['product info'],
+        address: '',
         imageUrl: product.imageUrl ?? null,
         ingredients: product.ingredients ?? null,
         calories: product.calories ?? null,
         nutrition: product.nutrition ?? null,
         productUrl: product.productUrl ?? null,
         detailQuery,
-        lat: place.lat,
-        lng: place.lng,
-        rating: place.rating,
-        source: 'instant',
+        source: product.source || 'Open Food Facts',
+        isLivePrice: false,
       };
-    })
-    .sort((a, b) => a.priceValue - b.priceValue);
+    });
 }
 
-function refreshResultsInBackground(cacheKey, args) {
-  return;
+async function searchKrogerPricedResults({ searchQuery, lat, lng, radiusMiles = 15, limit = 12 }) {
+  if (!lat || !lng) return [];
+  const stores = await findNearestStore(Number(lat), Number(lng), radiusMiles);
+  if (!Array.isArray(stores) || stores.length === 0) return [];
+
+  const rows = [];
+  const storeSearches = stores.slice(0, 6).map(async (store) => {
+    const products = await searchProducts(searchQuery, store.locationId, limit);
+    return products.slice(0, 5).map(product => {
+      const distance = (Number.isFinite(store.lat) && Number.isFinite(store.lng))
+        ? `${(haversine(Number(lat), Number(lng), Number(store.lat), Number(store.lng)) * 0.621).toFixed(1)} mi`
+        : '';
+      return {
+        id: `kroger-${store.locationId}-${product.id}`,
+        name: store.name || store.chain || 'Kroger-family store',
+        description: product.name,
+        brand: product.brand || null,
+        productSize: product.size || null,
+        price: product.price,
+        priceValue: product.priceValue,
+        regularPrice: product.regularPrice,
+        distance,
+        badges: product.badges ?? [],
+        address: store.address || '',
+        imageUrl: product.imageUrl ?? null,
+        ingredients: null,
+        calories: null,
+        nutrition: null,
+        productUrl: null,
+        detailQuery: [product.brand, product.name].filter(Boolean).join(' ') || product.name,
+        lat: store.lat,
+        lng: store.lng,
+        source: 'Kroger',
+        isLivePrice: true,
+      };
+    });
+  });
+
+  const settled = await Promise.allSettled(storeSearches);
+  settled.forEach(result => {
+    if (result.status === 'fulfilled') rows.push(...result.value);
+  });
+
+  return rows
+    .filter(row => row.priceValue != null)
+    .sort((a, b) => a.priceValue - b.priceValue)
+    .slice(0, limit);
 }
 
 // ── Haversine distance in km ───────────────────────────────────
@@ -975,7 +762,7 @@ app.get('/cart/:code', (req, res) => {
   for (const [storeName, storeItems] of Object.entries(stores)) {
     storeHtml += `<div class="store"><div class="sname">🏪 ${storeName}</div>`;
     for (const item of storeItems) {
-      total += item.priceValue * (item.quantity ?? 1);
+      total += (item.priceValue ?? 0) * (item.quantity ?? 1);
       storeHtml += `<div class="row"><span>${item.description} ×${item.quantity ?? 1}</span><span class="price">${item.price}</span></div>`;
     }
     storeHtml += '</div>';
@@ -1086,18 +873,25 @@ app.post('/api/results', async (req, res) => {
 
   res.set('X-Chifufu-Cache', 'MISS');
   const generation = Promise.all([
-    resolvePlaces({ location, category, lat, lng }),
-    searchOpenFoodFactsProducts(searchQuery, 6, 1100),
-  ]).then(([places, productCandidates]) => {
-    const items = buildInstantResults({ location, category, searchQuery, places, productCandidates });
-    setCachedResults(cacheKey, items);
-    refreshResultsInBackground(cacheKey, { location, category, searchQuery, places });
+    searchKrogerPricedResults({ searchQuery, lat, lng, limit: 10 }).catch(err => {
+      console.error('priced provider error:', err.message);
+      return [];
+    }),
+    searchOpenFoodFactsProducts(searchQuery, 12, 2400),
+  ]).then(([pricedItems, productCandidates]) => {
+    const pricedDetailQueries = new Set(pricedItems.map(item => normalizeCachePart(item.detailQuery)));
+    const catalogItems = buildCatalogResults({ searchQuery, productCandidates })
+      .filter(item => !pricedDetailQueries.has(normalizeCachePart(item.detailQuery)));
+    const items = [...pricedItems, ...catalogItems].slice(0, 20);
+    if (items.length > 0) {
+      setCachedResults(cacheKey, items);
+    }
     return items;
   });
   pendingResults.set(cacheKey, generation);
   try {
     const items = await generation;
-    res.set('X-Chifufu-Source', 'instant');
+    res.set('X-Chifufu-Source', 'providers');
     res.json(items);
   } catch (err) {
     console.error('results error:', err.message);

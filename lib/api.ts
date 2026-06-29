@@ -29,9 +29,9 @@ export interface PricedStoreOption {
   description: string;
   brand?: string | null;
   productSize?: string | null;
-  price: string;
-  priceValue: number;
-  distance: string;
+  price?: string | null;
+  priceValue?: number | null;
+  distance?: string;
   badges?: string[];
   address?: string;
   imageUrl?: string | null;
@@ -59,6 +59,8 @@ export interface PricedStoreOption {
   lat?: number;
   lng?: number;
   rating?: number;
+  source?: string;
+  isLivePrice?: boolean;
 }
 
 export interface ProductDetailsResponse {

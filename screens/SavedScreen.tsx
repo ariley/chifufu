@@ -56,7 +56,7 @@ export default function SavedScreen({ onSelectItem }: Props) {
             {item.brand ? `${item.brand} ` : ''}{item.name}
           </Text>
           <View style={styles.cardRight}>
-            <Text style={styles.cardPrice}>{item.price}</Text>
+            <Text style={styles.cardPrice}>{item.price ?? 'Info'}</Text>
             <TouchableOpacity
               onPress={() => remove(item.id)}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}

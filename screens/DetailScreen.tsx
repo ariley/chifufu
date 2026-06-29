@@ -120,7 +120,7 @@ export default function DetailScreen() {
         {!!details?.brand && <Text style={[styles.subtitle, { color: textSec }]}>{details.brand}</Text>}
         {!!details?.productSize && <Text style={[styles.subtitle, { color: textSec }]}>{details.productSize}</Text>}
         <Text style={[styles.storeLine, { color: textTer }]}>
-          {item.storeName ? `${item.storeName} · ` : ''}{item.price}
+          {item.storeName ? `${item.storeName} · ` : ''}{item.price ?? item.source ?? 'Product information'}
         </Text>
 
         {loading && (

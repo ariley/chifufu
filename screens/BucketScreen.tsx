@@ -67,7 +67,7 @@ export default function BucketScreen() {
     return Array.from(map.values());
   }, [items]);
 
-  const total = items.reduce((sum, i) => sum + i.priceValue * i.quantity, 0);
+  const total = items.reduce((sum, i) => sum + (i.priceValue ?? 0) * i.quantity, 0);
 
   async function buildRoute() {
     if (stores.length === 0) return;
@@ -200,7 +200,9 @@ export default function BucketScreen() {
                   <Text style={[styles.itemSize, { color: textTer }]} numberOfLines={1}>
                     {item.size}
                   </Text>
-                  <Text style={[styles.itemPrice, { color: accent }]}>{item.price} each</Text>
+                  <Text style={[styles.itemPrice, { color: item.price ? accent : textTer }]}>
+                    {item.price ? `${item.price} each` : 'Price unavailable'}
+                  </Text>
                 </View>
                 <View style={styles.qtyRow}>
                   <TouchableOpacity

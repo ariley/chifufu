@@ -31,10 +31,10 @@ function toGroceryItem(option: PricedStoreOption): GroceryItem {
     name: option.description,
     brand: option.brand ?? '',
     productSize: option.productSize ?? null,
-    size: option.distance,
-    price: option.price,
-    priceValue: option.priceValue,
-    regularPrice: '',
+    size: option.distance ?? '',
+    price: option.price ?? null,
+    priceValue: option.priceValue ?? null,
+    regularPrice: null,
     onSale: option.badges?.includes('deal') ?? false,
     savings: null,
     imageUrl: option.imageUrl ?? null,
@@ -48,6 +48,8 @@ function toGroceryItem(option: PricedStoreOption): GroceryItem {
     storeName: option.name,
     storeId: storeKey,
     storeAddress: option.address,
+    source: option.source,
+    isLivePrice: option.isLivePrice ?? Boolean(option.price),
   };
 }
 
@@ -269,10 +271,16 @@ export default function ResultsScreen() {
                   <Text style={[styles.cardStore, { color: textTer }]} numberOfLines={1}>
                     {item.storeName}{item.rating ? ` · ${item.rating.toFixed(1)} stars` : ''}{item.storeAddress ? ` · ${item.storeAddress}` : ''}
                   </Text>
+                ) : item.source ? (
+                  <Text style={[styles.cardStore, { color: textTer }]} numberOfLines={1}>
+                    {item.source}
+                  </Text>
                 ) : null}
               </View>
               <View style={styles.priceCol}>
-                <Text style={[styles.cardPrice, { color: accent }]}>{item.price}</Text>
+                <Text style={[styles.cardPrice, { color: item.price ? accent : textTer }]}>
+                  {item.price ?? 'Info'}
+                </Text>
                 {item.onSale && item.regularPrice && item.regularPrice !== item.price ? (
                   <Text style={[styles.regularPrice, { color: textTer }]}>{item.regularPrice}</Text>
                 ) : null}

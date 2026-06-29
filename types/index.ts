@@ -5,9 +5,9 @@ export interface GroceryItem {
   brand: string;
   productSize?: string | null;
   size: string;
-  price: string;        // "$9.99"
-  priceValue: number;   // 9.99
-  regularPrice: string;
+  price: string | null;
+  priceValue: number | null;
+  regularPrice: string | null;
   onSale: boolean;
   savings: string | null;
   imageUrl: string | null;
@@ -18,6 +18,8 @@ export interface GroceryItem {
   detailQuery?: string;
   badges: string[];
   rating?: number;
+  source?: string;
+  isLivePrice?: boolean;
   // store context (added client-side)
   storeName?: string;
   storeId?: string;
