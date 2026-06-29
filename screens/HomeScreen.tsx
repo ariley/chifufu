@@ -17,6 +17,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { RootStackParamList } from '../types';
 import { useSearchHistory } from '../hooks/useSearchHistory';
+import { SavedLocation, useSavedLocations } from '../hooks/useSavedLocations';
 import { useThemeContext } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -38,6 +39,7 @@ export default function HomeScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
   const { history, push: pushHistory, remove: removeHistory } = useSearchHistory();
+  const { locations: savedLocations, save: saveLocation, remove: removeLocation } = useSavedLocations();
 
   useEffect(() => {
     detectLocation();
@@ -71,6 +73,38 @@ export default function HomeScreen() {
       setManualLocation(false);
     } finally {
       setLocating(false);
+    }
+  }
+
+  function selectSavedLocation(saved: SavedLocation) {
+    setLocation(saved.label);
+    setGpsCoords({ lat: saved.lat, lng: saved.lng });
+    setManualLocation(true);
+  }
+
+  async function handleSaveLocation() {
+    const label = location.trim();
+    if (!label || locating) return;
+
+    try {
+      const coords = await resolveSearchCoords();
+      const commitSave = (name?: string) => {
+        const saved = saveLocation({
+          name: name?.trim() || label,
+          label,
+          lat: coords.lat,
+          lng: coords.lng,
+        });
+        Alert.alert('Location saved', `${saved.name} is now available from the home screen.`);
+      };
+
+      if (Platform.OS === 'ios') {
+        Alert.prompt('Save Location', 'Name this location', commitSave, 'plain-text', label);
+      } else {
+        commitSave(label);
+      }
+    } catch {
+      Alert.alert('Could not save location', 'Try entering a city or zip code again.');
     }
   }
 
@@ -175,6 +209,65 @@ export default function HomeScreen() {
           </Text>
           {!locating && <Text style={[styles.chevron, { color: textTer }]}>›</Text>}
         </TouchableOpacity>
+
+        {/* Saved locations */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionLabel, { color: textTer }]}>LOCATIONS</Text>
+            <TouchableOpacity
+              onPress={handleSaveLocation}
+              disabled={locating || !location.trim()}
+              accessibilityRole="button"
+              accessibilityLabel="Save selected location"
+            >
+              <Text style={[styles.clearBtn, { color: locating ? textTer : accent }]}>Save</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.locationChips}
+          >
+            <TouchableOpacity
+              style={[
+                styles.locationChip,
+                { backgroundColor: manualLocation ? bgSec : accent, borderColor: manualLocation ? border : accent },
+              ]}
+              onPress={detectLocation}
+              accessibilityRole="button"
+              accessibilityLabel="Use current location"
+            >
+              <Text style={[styles.locationChipText, { color: manualLocation ? textSec : accentLight }]}>
+                📍 Current
+              </Text>
+            </TouchableOpacity>
+            {savedLocations.map((saved) => {
+              const selected = manualLocation && location.trim() === saved.label;
+              return (
+                <TouchableOpacity
+                  key={saved.id}
+                  style={[
+                    styles.locationChip,
+                    { backgroundColor: selected ? accent : bgSec, borderColor: selected ? accent : border },
+                  ]}
+                  onPress={() => selectSavedLocation(saved)}
+                  onLongPress={() => {
+                    Alert.alert('Remove location?', saved.name, [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Remove', style: 'destructive', onPress: () => removeLocation(saved.id) },
+                    ]);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Use ${saved.name}`}
+                >
+                  <Text style={[styles.locationChipText, { color: selected ? accentLight : textSec }]} numberOfLines={1}>
+                    {saved.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
 
         {/* Search bar */}
         <View style={[styles.searchRow, { backgroundColor: bgSec, borderColor: border }]}>
@@ -346,6 +439,15 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
   },
   chipText: { fontSize: 14, fontWeight: '500' },
+  locationChips: { gap: 8, paddingRight: 4 },
+  locationChip: {
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderWidth: 0.5,
+    maxWidth: 180,
+  },
+  locationChipText: { fontSize: 14, fontWeight: '500' },
   recentChips: { gap: 8, paddingRight: 4 },
   recentChip: {
     borderRadius: 20,
