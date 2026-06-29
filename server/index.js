@@ -11,7 +11,7 @@ app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const RESULTS_CACHE_VERSION = 'products-v3-labels';
+const RESULTS_CACHE_VERSION = 'products-v4-real-labels';
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
 const PRODUCT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const resultsCache = new Map();
@@ -245,25 +245,64 @@ function mapOpenFoodFactsProduct(product, query) {
     ingredients: product?.ingredients_text_en || product?.ingredients_text || null,
     calories: calories || null,
     nutrition,
-    allergens: String(product?.allergens_tags || '')
-      .split(',')
-      .map(tag => tag.replace(/^en:/, '').replace(/-/g, ' '))
-      .filter(Boolean)
-      .slice(0, 8),
-    labels: String(product?.labels_tags || '')
-      .split(',')
-      .map(tag => tag.replace(/^en:/, '').replace(/-/g, ' '))
-      .filter(Boolean)
-      .slice(0, 8),
+    allergens: normalizeTags(product?.allergens_tags),
+    labels: normalizeTags(product?.labels_tags),
     productUrl: product?.url || null,
     source: 'Open Food Facts',
   };
+}
+
+function hasRealProductIdentity(product) {
+  return Boolean(cleanText(product?.name) && cleanText(product?.brand));
+}
+
+function hasProductLabelData(product) {
+  const nutrition = product?.nutrition ?? {};
+  return Boolean(
+    cleanText(product?.ingredients)
+    || cleanText(product?.calories)
+    || cleanText(nutrition.calories)
+    || cleanText(nutrition.servingSize)
+    || cleanText(nutrition.protein)
+    || cleanText(nutrition.fat)
+    || cleanText(nutrition.carbs)
+  );
+}
+
+function hasUsableProductImage(product) {
+  return /^https?:\/\//i.test(cleanText(product?.imageUrl));
+}
+
+function isUsableProductCandidate(product) {
+  return Boolean(
+    product
+    && hasRealProductIdentity(product)
+    && hasUsableProductImage(product)
+    && hasProductLabelData(product)
+    && product.source !== 'fallback'
+  );
+}
+
+function normalizeTags(tags) {
+  if (Array.isArray(tags)) {
+    return tags
+      .map(tag => String(tag).replace(/^en:/, '').replace(/-/g, ' '))
+      .filter(Boolean)
+      .slice(0, 8);
+  }
+  return String(tags || '')
+    .split(',')
+    .map(tag => tag.replace(/^en:/, '').replace(/-/g, ' '))
+    .filter(Boolean)
+    .slice(0, 8);
 }
 
 const PRODUCT_QUERY_ALIASES = new Map([
   ['norwegian cream cheese', ['snofrisk', 'snofrisk cream cheese', 'tine cream cheese', 'tine']],
   ['italian provolone cheese', ['italian provolone', 'provolone cheese', 'provolone']],
   ['italian provolone', ['italian provolone cheese', 'provolone cheese', 'provolone']],
+  ['eggs', ['dozen eggs', 'large eggs', 'organic brown eggs']],
+  ['orange juice with pulp', ['orange juice with pulp', 'medium pulp orange juice', 'with pulp orange juice']],
 ]);
 
 const CURATED_PRODUCT_CANDIDATES = [
@@ -342,6 +381,176 @@ const CURATED_PRODUCT_CANDIDATES = [
       },
     ],
   },
+  {
+    patterns: [/\beggs?\b/i, /\bdozen eggs?\b/i],
+    products: [
+      {
+        query: "Trader Joe's Organic Grade A Large Brown Eggs",
+        name: 'Organic Grade A Large Brown Eggs',
+        brand: "Trader Joe's",
+        productSize: '27 oz (1 lb 11 oz) 765 g',
+        imageUrl: 'https://images.openfoodfacts.org/images/products/000/000/081/5659/front_en.3.400.jpg',
+        ingredients: null,
+        calories: '70 kcal',
+        nutrition: {
+          calories: '70 kcal',
+          fat: '5 g',
+          saturatedFat: '1.5 g',
+          transFat: '0 g',
+          cholesterol: '185 mg',
+          carbs: '0 g',
+          sugars: '0 g',
+          fiber: '0 g',
+          protein: '6 g',
+          sodium: '70 mg',
+          calcium: '30 mg',
+          iron: '0.9 mg',
+          potassium: '70 mg',
+          servingSize: '1 egg (50 g)',
+        },
+        allergens: ['egg'],
+        labels: ['organic', 'usda organic'],
+        productUrl: 'https://world.openfoodfacts.org/product/0000000815659',
+        source: 'Open Food Facts',
+      },
+      {
+        query: 'Lucerne Jumbo One Dozen Eggs',
+        name: 'Jumbo One Dozen Eggs',
+        brand: 'Lucerne',
+        productSize: '1 egg (63 g)',
+        imageUrl: 'https://images.openfoodfacts.org/images/products/002/113/003/0002/front_en.7.400.jpg',
+        ingredients: null,
+        calories: '90 kcal',
+        nutrition: {
+          calories: '90 kcal',
+          fat: '6 g',
+          saturatedFat: '2 g',
+          transFat: '0 g',
+          cholesterol: '235 mg',
+          carbs: '0 g',
+          sugars: '0 g',
+          protein: '8 g',
+          sodium: '91.5 mg',
+          calcium: '39.7 mg',
+          iron: '1.1 mg',
+          potassium: '85.1 mg',
+          servingSize: '1 egg (63 g)',
+        },
+        allergens: ['egg'],
+        labels: [],
+        productUrl: 'https://world.openfoodfacts.org/product/0021130030002',
+        source: 'Open Food Facts',
+      },
+      {
+        query: 'True Goodness Organic Pasture Raised Eggs Dozen',
+        name: 'Organic Pasture Raised Eggs Dozen',
+        brand: 'True Goodness',
+        productSize: '12 eggs',
+        imageUrl: 'https://images.openfoodfacts.org/images/products/076/023/614/0849/front_en.3.400.jpg',
+        ingredients: null,
+        calories: '70 kcal',
+        nutrition: {
+          calories: '70 kcal',
+          fat: '5 g',
+          saturatedFat: '1.5 g',
+          cholesterol: '185 mg',
+          carbs: '0 g',
+          protein: '6 g',
+          sodium: '70 mg',
+          servingSize: '1 egg (50 g)',
+        },
+        allergens: ['egg'],
+        labels: ['organic', 'usda organic'],
+        productUrl: 'https://world.openfoodfacts.org/product/0760236140849',
+        source: 'Open Food Facts',
+      },
+    ],
+  },
+  {
+    patterns: [/orange juice/i, /\bwith pulp\b/i, /\bpulp orange\b/i],
+    products: [
+      {
+        query: 'Simply Orange Medium Pulp With Calcium And Vitamin D',
+        name: 'Medium Pulp With Calcium And Vitamin D',
+        brand: 'Simply Orange',
+        productSize: '52 fl oz',
+        imageUrl: 'https://images.openfoodfacts.org/images/products/002/500/004/4830/front_en.18.400.jpg',
+        ingredients: 'Contains orange juice, less than 1% of: calcium phosphate and calcium lactate (calcium sources), vitamin D3.',
+        calories: '110 kcal',
+        nutrition: {
+          calories: '110 kcal',
+          fat: '0 g',
+          saturatedFat: '0 g',
+          transFat: '0 g',
+          cholesterol: '0 mg',
+          carbs: '26 g',
+          sugars: '23 g',
+          protein: '2 g',
+          sodium: '0 mg',
+          calcium: '146 mg',
+          potassium: '188 mg',
+          servingSize: '240 ml',
+        },
+        allergens: [],
+        labels: ['no gmos', 'no added sugar', 'non gmo project'],
+        productUrl: 'https://world.openfoodfacts.org/product/0025000044830',
+        source: 'Open Food Facts',
+      },
+      {
+        query: "Florida's Natural With Pulp Orange Juice With Calcium And Vitamin D",
+        name: 'With Pulp 100% Premium Orange Juice From Concentrate With Calcium & Vitamin D',
+        brand: "Florida's Natural",
+        productSize: '240 ml',
+        imageUrl: 'https://images.openfoodfacts.org/images/products/001/630/016/8234/front_en.4.400.jpg',
+        ingredients: 'Pasteurized orange juice, tri-calcium citrate (calcium source) and vitamin D3.',
+        calories: '110 kcal',
+        nutrition: {
+          calories: '110 kcal',
+          fat: '0 g',
+          saturatedFat: '0 g',
+          transFat: '0 g',
+          cholesterol: '0 mg',
+          carbs: '27 g',
+          sugars: '24 g',
+          fiber: '0 g',
+          protein: '2 g',
+          sodium: '4.2 mg',
+          calcium: '146 mg',
+          iron: '0.1 mg',
+          servingSize: '240 ml',
+        },
+        allergens: [],
+        labels: ['kosher', 'no gmos', 'non gmo project'],
+        productUrl: 'https://world.openfoodfacts.org/product/0016300168234',
+        source: 'Open Food Facts',
+      },
+      {
+        query: 'Minute Maid Original Low Pulp Orange Juice With Calcium & Vitamin D',
+        name: 'Original Low Pulp Orange Juice With Calcium & Vitamin D',
+        brand: 'Minute Maid',
+        productSize: '8 fl oz (240 ml)',
+        imageUrl: 'https://images.openfoodfacts.org/images/products/002/500/004/7923/front_en.9.400.jpg',
+        ingredients: '100% orange juice from concentrate with filtered water, premium concentrated orange juice, calcium phosphate and calcium lactate (calcium sources), vitamin D3.',
+        calories: '110 kcal',
+        nutrition: {
+          calories: '110 kcal',
+          fat: '0 g',
+          saturatedFat: '0 g',
+          carbs: '27 g',
+          sugars: '24 g',
+          protein: '2 g',
+          sodium: '14.4 mg',
+          calcium: '350 mg',
+          potassium: '451 mg',
+          servingSize: '8 fl oz (240 ml)',
+        },
+        allergens: [],
+        labels: ['no gmos', 'non gmo project'],
+        productUrl: 'https://world.openfoodfacts.org/product/0025000047923',
+        source: 'Open Food Facts',
+      },
+    ],
+  },
 ];
 
 function getCuratedProductCandidates(searchQuery) {
@@ -375,9 +584,12 @@ async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1
   for (const product of getCuratedProductCandidates(searchQuery)) {
     const key = normalizeCachePart(`${product.brand || ''}|${product.name}|${product.productSize || ''}`);
     if (!seen.has(key)) {
-      seen.add(key);
-      candidates.push(product);
-      setCachedProductDetails(normalizeCachePart([product.brand, product.name].filter(Boolean).join(' ')), product);
+      if (isUsableProductCandidate(product)) {
+        seen.add(key);
+        candidates.push(product);
+        setCachedProductDetails(normalizeCachePart([product.brand, product.name].filter(Boolean).join(' ')), product);
+        setCachedProductDetails(normalizeCachePart(product.query), product);
+      }
     }
   }
   if (candidates.length >= 2) {
@@ -410,10 +622,11 @@ async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1
       for (const product of data.products ?? []) {
         const details = mapOpenFoodFactsProduct(product, term);
         const key = normalizeCachePart(`${details.brand || ''}|${details.name}|${details.productSize || ''}`);
-        if (!details.name || seen.has(key)) continue;
+        if (!isUsableProductCandidate(details) || seen.has(key)) continue;
         seen.add(key);
         candidates.push(details);
         setCachedProductDetails(normalizeCachePart([details.brand, details.name].filter(Boolean).join(' ')), details);
+        setCachedProductDetails(normalizeCachePart(details.query), details);
         if (candidates.length >= limit) break;
       }
     } catch (err) {
@@ -437,7 +650,7 @@ async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
     const text = normalizeCachePart([product.brand, product.name, product.query].filter(Boolean).join(' '));
     return text.includes(cacheKey) || cacheKey.includes(normalizeCachePart(product.name));
   });
-  if (curated) {
+  if (isUsableProductCandidate(curated)) {
     setCachedProductDetails(cacheKey, curated);
     return curated;
   }
@@ -460,6 +673,7 @@ async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
     const product = data.products?.[0];
     if (!product) return null;
     const details = mapOpenFoodFactsProduct(product, query);
+    if (!isUsableProductCandidate(details)) return null;
     setCachedProductDetails(cacheKey, details);
     return details;
   } catch (err) {
@@ -477,26 +691,11 @@ function storePriceMultiplier(place, index) {
   return 0.88 + (priceLevel * 0.08) + (index * 0.035) + Math.max(0, rating - 4) * 0.04 + Math.min(distance, 6) * 0.015;
 }
 
-function fallbackProductCandidate(searchQuery) {
-  const hint = getPriceHint(searchQuery);
-  return {
-    query: productDetailQuery(searchQuery),
-    name: `${hint.name} (${hint.size})`,
-    brand: null,
-    productSize: hint.size,
-    imageUrl: null,
-    ingredients: null,
-    calories: null,
-    nutrition: null,
-    productUrl: null,
-    source: 'fallback',
-  };
-}
-
 function buildInstantResults({ location, category, searchQuery, places, productCandidates }) {
   const hint = getPriceHint(searchQuery);
   const usablePlaces = (places.length > 0 ? places : DEFAULT_STORES).slice(0, 8);
-  const candidates = productCandidates?.length ? productCandidates : [fallbackProductCandidate(searchQuery)];
+  const candidates = (productCandidates ?? []).filter(isUsableProductCandidate);
+  if (candidates.length === 0) return [];
   const badgeFor = (place, index) => {
     const badges = [];
     if (index < 2) badges.push('deal');

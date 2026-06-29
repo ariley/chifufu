@@ -54,6 +54,24 @@ async function assertDistinctProductRows(searchQuery) {
     throw new Error(`${searchQuery}: expected multiple product images, got ${images}`);
   }
 
+  const firstDetails = await getDetails(items[0].detailQuery);
+  if (!firstDetails.imageUrl || (!firstDetails.ingredients && !firstDetails.nutrition?.servingSize && !firstDetails.calories)) {
+    throw new Error(`${searchQuery}: expected detail page image and label data for ${items[0].detailQuery}`);
+  }
+
+  for (const item of items) {
+    const product = [item.brand, item.description].filter(Boolean).join(' ');
+    if (!item.brand || !item.imageUrl) {
+      throw new Error(`${searchQuery}: expected brand and image for every row, missing on ${product || item.description}`);
+    }
+    if (!item.calories && !item.ingredients && !item.nutrition?.servingSize) {
+      throw new Error(`${searchQuery}: expected label data for ${product}`);
+    }
+    if (/typical package|eggs \(dozen\)|source['"]?:\s*['"]fallback/i.test(JSON.stringify(item))) {
+      throw new Error(`${searchQuery}: generic fallback product leaked into results`);
+    }
+  }
+
   console.log(JSON.stringify({
     searchQuery,
     rows: items.length,
@@ -69,6 +87,8 @@ async function assertDistinctProductRows(searchQuery) {
 }
 
 await assertDistinctProductRows('Norwegian cream cheese');
+await assertDistinctProductRows('Eggs');
+await assertDistinctProductRows('Orange juice with pulp');
 
 const israeliFetaItems = await postResults('Israeli feta');
 const israeliFeta = israeliFetaItems.find(item => item.detailQuery?.includes("Trader Joe's Israeli Feta"));
