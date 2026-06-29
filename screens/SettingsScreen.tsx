@@ -8,10 +8,13 @@ import {
   View,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import * as Application from 'expo-application';
+import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import { useThemeContext, THEME_DEFS, ThemeKey } from '../contexts/ThemeContext';
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'dev';
+const BUILD_LABEL = Application.nativeBuildVersion ?? 'dev';
 
 export default function SettingsScreen() {
   const navigation = useNavigation();
@@ -71,7 +74,9 @@ export default function SettingsScreen() {
         <View style={[styles.card, { backgroundColor: bgSec, borderColor: border }]}>
           <View style={styles.infoRow}>
             <Text style={[styles.infoLabel, { color: textSec }]}>Version</Text>
-            <Text style={[styles.infoValue, { color: text }]}>{APP_VERSION}</Text>
+            <Text style={[styles.infoValue, { color: text }]}>
+              {APP_VERSION} ({BUILD_LABEL})
+            </Text>
           </View>
           <View style={[styles.rowSep, { backgroundColor: border }]} />
           <View style={styles.infoRow}>
