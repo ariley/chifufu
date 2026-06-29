@@ -70,6 +70,8 @@ export default function ResultsScreen() {
   const [results, setResults] = useState<GroceryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [saleOnly, setSaleOnly] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const resultsLocationLabel = locationLabel?.trim() || 'your selected location';
 
   const { isInBucket, add: addToBucket, count: bucketCount } = useBucketContext();
@@ -89,6 +91,40 @@ export default function ResultsScreen() {
 
   function handleAddToList(item: GroceryItem) {
     addToBucket(item);
+    showToast();
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds(current => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function handleSelectVisible(items: GroceryItem[]) {
+    setSelectedIds(current => {
+      const next = new Set(current);
+      const allVisibleSelected = items.length > 0 && items.every(item => next.has(item.id));
+      items.forEach(item => {
+        if (allVisibleSelected) {
+          next.delete(item.id);
+        } else {
+          next.add(item.id);
+        }
+      });
+      return next;
+    });
+  }
+
+  function handleAddSelected() {
+    const selectedItems = results.filter(item => selectedIds.has(item.id) && !isInBucket(item.id));
+    selectedItems.forEach(addToBucket);
+    setSelectedIds(new Set());
     showToast();
   }
 
@@ -151,8 +187,22 @@ export default function ResultsScreen() {
     loadResults();
   }, [loadResults]);
 
+  useEffect(() => {
+    setSelectedIds(current => {
+      const validIds = new Set(results.map(item => item.id));
+      const next = new Set([...current].filter(id => validIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [results]);
+
+  const saleCount = results.filter(item => item.onSale).length;
+  const visibleResults = saleOnly ? results.filter(item => item.onSale) : results;
+  const visibleSelectedCount = visibleResults.filter(item => selectedIds.has(item.id)).length;
+  const selectedCount = selectedIds.size;
+
   function renderCard({ item }: { item: GroceryItem }) {
     const inList = isInBucket(item.id);
+    const selected = selectedIds.has(item.id);
     return (
       <TouchableOpacity
         style={[styles.card, { backgroundColor: bg, borderColor: border }]}
@@ -171,6 +221,22 @@ export default function ResultsScreen() {
         )}
 
         <View style={styles.cardBody}>
+          <TouchableOpacity
+            style={[
+              styles.checkbox,
+              { borderColor: selected ? accent : border, backgroundColor: selected ? accent : 'transparent' },
+            ]}
+            onPress={(event) => {
+              event.stopPropagation();
+              toggleSelected(item.id);
+            }}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: selected }}
+            accessibilityLabel={`${selected ? 'Deselect' : 'Select'} ${displayNameWithBrand(item)}`}
+          >
+            {selected ? <Text style={[styles.checkboxMark, { color: accentLight }]}>✓</Text> : null}
+          </TouchableOpacity>
+
           {/* Product image */}
           <TouchableOpacity
             onPress={() => navigation.navigate('Detail', { item })}
@@ -283,23 +349,64 @@ export default function ResultsScreen() {
         </View>
       ) : (
         <FlatList
-          data={results}
+          data={visibleResults}
           keyExtractor={(item) => `${item.storeId ?? 'store'}-${item.id}`}
           renderItem={renderCard}
           contentContainerStyle={styles.listContent}
           ItemSeparatorComponent={() => <View style={styles.separator} />}
           ListHeaderComponent={
             results.length > 0 ? (
-              <Text style={[styles.storeHeader, { color: textTer }]}>
-                Priced options across supermarkets
-              </Text>
+              <View style={styles.resultsTools}>
+                <Text style={[styles.storeHeader, { color: textTer }]}>
+                  {saleOnly ? 'Sale items across supermarkets' : 'Priced options across supermarkets'}
+                </Text>
+                <View style={styles.filterRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterChip,
+                      { borderColor: !saleOnly ? accent : border, backgroundColor: !saleOnly ? accent : bgSec },
+                    ]}
+                    onPress={() => setSaleOnly(false)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Show all priced options"
+                  >
+                    <Text style={[styles.filterChipText, { color: !saleOnly ? accentLight : textSec }]}>
+                      All {results.length}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.filterChip,
+                      { borderColor: saleOnly ? SALE_GREEN : border, backgroundColor: saleOnly ? SALE_GREEN : bgSec },
+                    ]}
+                    onPress={() => setSaleOnly(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Show sale items"
+                  >
+                    <Text style={[styles.filterChipText, { color: saleOnly ? '#fff' : textSec }]}>
+                      Sale {saleCount}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.selectVisibleBtn, { borderColor: border }]}
+                    onPress={() => handleSelectVisible(visibleResults)}
+                    accessibilityRole="button"
+                    accessibilityLabel={visibleSelectedCount === visibleResults.length ? 'Clear visible selections' : 'Select visible items'}
+                    disabled={visibleResults.length === 0}
+                  >
+                    <Text style={[styles.selectVisibleText, { color: visibleResults.length === 0 ? textTer : accent }]}>
+                      {visibleSelectedCount === visibleResults.length && visibleResults.length > 0 ? 'Clear visible' : 'Select visible'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             ) : null
           }
           ListEmptyComponent={
             <View style={styles.emptyWrap}>
               <Text style={styles.emptyIcon}>🔍</Text>
               <Text style={[styles.emptyTitle, { color: text }]}>
-                No priced options for "{query}"
+                {saleOnly ? `No sale items for "${query}"` : `No priced options for "${query}"`}
               </Text>
               <Text style={[styles.emptyMsg, { color: textSec }]}>
                 near {resultsLocationLabel}
@@ -310,6 +417,28 @@ export default function ResultsScreen() {
             </View>
           }
         />
+      )}
+
+      {selectedCount > 0 && (
+        <View style={[styles.bulkBar, { backgroundColor: bgSec, borderTopColor: border }]}>
+          <TouchableOpacity
+            style={styles.bulkClearBtn}
+            onPress={() => setSelectedIds(new Set())}
+            accessibilityRole="button"
+            accessibilityLabel="Clear selections"
+          >
+            <Text style={[styles.bulkClearText, { color: textSec }]}>Clear</Text>
+          </TouchableOpacity>
+          <Text style={[styles.bulkCount, { color: text }]}>{selectedCount} selected</Text>
+          <TouchableOpacity
+            style={[styles.bulkAddBtn, { backgroundColor: accent }]}
+            onPress={handleAddSelected}
+            accessibilityRole="button"
+            accessibilityLabel={`Add ${selectedCount} selected items to list`}
+          >
+            <Text style={[styles.bulkAddText, { color: accentLight }]}>Add selected</Text>
+          </TouchableOpacity>
+        </View>
       )}
 
       <Animated.View style={[styles.toast, { opacity: toastOpacity }]} pointerEvents="none">
@@ -389,13 +518,47 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
   },
   bucketBadgeText: { color: '#fff', fontSize: 9, fontWeight: '700' },
-  listContent: { padding: 16, paddingBottom: 40 },
+  listContent: { padding: 16, paddingBottom: 96 },
+  resultsTools: {
+    marginBottom: 12,
+  },
   storeHeader: {
     fontSize: 12,
     fontWeight: '500',
     letterSpacing: 0.5,
     marginBottom: 12,
     textTransform: 'uppercase',
+  },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  filterChip: {
+    height: 34,
+    minWidth: 72,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  selectVisibleBtn: {
+    height: 34,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 'auto',
+  },
+  selectVisibleText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   priceSectionHeader: { marginBottom: 2 },
   priceSource: { fontSize: 12, marginTop: -6, marginBottom: 10 },
@@ -457,6 +620,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
   },
+  checkbox: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 18,
+  },
+  checkboxMark: {
+    fontSize: 16,
+    fontWeight: '800',
+    lineHeight: 18,
+  },
   productImage: {
     width: 64,
     height: 64,
@@ -517,4 +694,44 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
   },
   toastText: { color: '#fff', fontSize: 14, fontWeight: '500' },
+  bulkBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    minHeight: 66,
+    borderTopWidth: 0.5,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  bulkClearBtn: {
+    height: 42,
+    minWidth: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bulkClearText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  bulkCount: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  bulkAddBtn: {
+    height: 42,
+    borderRadius: 10,
+    paddingHorizontal: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bulkAddText: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
 });
