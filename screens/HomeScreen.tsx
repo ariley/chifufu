@@ -16,6 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { RootStackParamList } from '../types';
+import { useBucketContext } from '../App';
 import { useSearchHistory } from '../hooks/useSearchHistory';
 import { SavedLocation, useSavedLocations } from '../hooks/useSavedLocations';
 import { useThemeContext } from '../contexts/ThemeContext';
@@ -31,6 +32,7 @@ export default function HomeScreen() {
   const dark = scheme === 'dark';
   const { bg, bgSec, text, textSec, textTer, border, accent, accentLight } = useThemeContext();
   const { isAuthenticated } = useAuth();
+  const { count: bucketCount } = useBucketContext();
   const [location, setLocation] = useState('');
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [manualLocation, setManualLocation] = useState(false);
@@ -173,6 +175,20 @@ export default function HomeScreen() {
           <View style={styles.topRow}>
             <Text style={[styles.appLabel, { color: textTer }]}>CHIFUFU</Text>
             <View style={styles.topRowIcons}>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Bucket')}
+                style={styles.bucketBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel={`My List — ${bucketCount} items`}
+                accessibilityRole="button"
+              >
+                <Text style={styles.bucketIcon}>🛒</Text>
+                {bucketCount > 0 && (
+                  <View style={[styles.bucketBadge, { backgroundColor: accent }]}>
+                    <Text style={styles.bucketBadgeText}>{bucketCount > 9 ? '9+' : bucketCount}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => navigation.navigate(isAuthenticated ? 'Profile' : 'Auth')}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -382,6 +398,26 @@ const styles = StyleSheet.create({
   },
   topRowIcons: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   iconBtn: { fontSize: 20 },
+  bucketBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  bucketIcon: { fontSize: 22 },
+  bucketBadge: {
+    position: 'absolute',
+    top: -3,
+    right: -4,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  bucketBadgeText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
   appLabel: {
     fontSize: 12,
     fontWeight: '500',
