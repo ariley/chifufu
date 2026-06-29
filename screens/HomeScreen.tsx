@@ -25,6 +25,15 @@ import { useAuth } from '../contexts/AuthContext';
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
 const QUICK_SEARCHES = ['Milk', 'Eggs', 'Bread', 'Chicken'];
+const OAKLAND_COORDS = { lat: 37.8044, lng: -122.2712 };
+
+function normalizeLocationLabel(value: string) {
+  const trimmed = value.trim();
+  if (/^(l\.?\s*a\.?|la)$/i.test(trimmed) || /^los angeles$/i.test(trimmed)) {
+    return 'Los Angeles, CA';
+  }
+  return trimmed;
+}
 
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
@@ -53,6 +62,7 @@ export default function HomeScreen() {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         setLocation('Oakland, CA');
+        setGpsCoords(OAKLAND_COORDS);
         setManualLocation(false);
         return;
       }
@@ -72,6 +82,7 @@ export default function HomeScreen() {
       }
     } catch {
       setLocation('Oakland, CA');
+      setGpsCoords(OAKLAND_COORDS);
       setManualLocation(false);
     } finally {
       setLocating(false);
@@ -85,11 +96,15 @@ export default function HomeScreen() {
   }
 
   async function handleSaveLocation() {
-    const label = location.trim();
+    const label = normalizeLocationLabel(location);
     if (!label || locating) return;
 
     try {
       const coords = await resolveSearchCoords();
+      if (!coords) {
+        Alert.alert('Could not save location', 'Try entering a city or zip code again.');
+        return;
+      }
       const commitSave = (name?: string) => {
         const saved = saveLocation({
           name: name?.trim() || label,
@@ -113,7 +128,7 @@ export default function HomeScreen() {
   async function resolveSearchCoords() {
     if (!manualLocation && gpsCoords) return gpsCoords;
 
-    const trimmedLocation = location.trim();
+    const trimmedLocation = normalizeLocationLabel(location);
     if (trimmedLocation) {
       const [match] = await Location.geocodeAsync(trimmedLocation);
       if (match) {
@@ -121,7 +136,7 @@ export default function HomeScreen() {
       }
     }
 
-    return { lat: 37.8044, lng: -122.2712 };
+    return null;
   }
 
   function handleLocationTap() {
@@ -131,7 +146,7 @@ export default function HomeScreen() {
         'Enter a city or zip code',
         (t) => {
           if (t?.trim()) {
-            setLocation(t.trim());
+            setLocation(normalizeLocationLabel(t));
             setManualLocation(true);
           }
         },
@@ -151,12 +166,21 @@ export default function HomeScreen() {
     if (!q) return;
     setResolvingSearchLocation(true);
     try {
-      const { lat, lng } = await resolveSearchCoords();
+      const selectedLocation = normalizeLocationLabel(location);
+      const coords = await resolveSearchCoords();
       pushHistory(q);
-      navigation.navigate('Results', { query: q, lat, lng, locationLabel: location });
+      navigation.navigate('Results', {
+        query: q,
+        lat: coords?.lat,
+        lng: coords?.lng,
+        locationLabel: selectedLocation || 'Current Location',
+      });
     } catch {
       pushHistory(q);
-      navigation.navigate('Results', { query: q, lat: 37.8044, lng: -122.2712, locationLabel: 'Oakland, CA' });
+      navigation.navigate('Results', {
+        query: q,
+        locationLabel: normalizeLocationLabel(location) || 'Current Location',
+      });
     } finally {
       setResolvingSearchLocation(false);
     }

@@ -40,8 +40,8 @@ export interface PricedStoreOption {
 export async function fetchPricedGroceryOptions(
   query: string,
   location: string,
-  lat: number,
-  lng: number,
+  lat?: number,
+  lng?: number,
 ) {
   const res = await fetch(`${BASE}/api/results`, {
     method: 'POST',

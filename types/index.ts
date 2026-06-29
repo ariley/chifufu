@@ -35,7 +35,7 @@ export interface BucketItem extends GroceryItem {
 
 export type RootStackParamList = {
   Home: undefined;
-  Results: { query: string; lat: number; lng: number; locationLabel?: string };
+  Results: { query: string; lat?: number; lng?: number; locationLabel?: string };
   Bucket: undefined;
   Settings: undefined;
   Auth: undefined;
