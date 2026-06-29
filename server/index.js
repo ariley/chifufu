@@ -455,11 +455,9 @@ async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
   if (cached) return cached;
 
   try {
-    const data = await fetchOpenFoodFactsSearch(query, 3, timeoutMs);
-    const product = data.products?.[0];
-    if (!product) return null;
-    const details = mapOpenFoodFactsProduct(product, query);
-    if (!isUsableProductCandidate(details) || !isRelevantProductCandidate(details, query)) return null;
+    const candidates = await searchOpenFoodFactsProducts(query, 3, timeoutMs);
+    const details = candidates[0];
+    if (!isUsableProductCandidate(details)) return null;
     setCachedProductDetails(cacheKey, details);
     return details;
   } catch (err) {
