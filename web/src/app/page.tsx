@@ -24,7 +24,7 @@ const steps = [
 export default function HomePage() {
   return (
     <div className="bg-[#fbfaf6] text-[#193126]">
-      <section className="mx-auto grid min-h-[calc(100vh-64px)] max-w-6xl grid-cols-1 gap-12 px-6 pb-12 pt-12 md:grid-cols-[1fr_430px] md:items-center md:pt-16">
+      <section className="mx-auto grid min-h-[calc(100vh-64px)] max-w-6xl grid-cols-1 gap-10 px-6 pb-12 pt-7 md:grid-cols-[1fr_430px] md:items-start md:pt-10">
         <div>
           <p className="mb-5 inline-flex rounded-full border border-[#cfe5d4] bg-white px-4 py-2 text-sm font-medium text-[#28734e]">
             In development for everyday food budgets
