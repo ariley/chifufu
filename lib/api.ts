@@ -27,6 +27,8 @@ export interface PricedStoreOption {
   id: string;
   name: string;
   description: string;
+  brand?: string | null;
+  productSize?: string | null;
   price: string;
   priceValue: number;
   distance: string;
@@ -56,6 +58,7 @@ export interface ProductDetailsResponse {
   query: string;
   name: string;
   brand?: string | null;
+  productSize?: string | null;
   imageUrl?: string | null;
   ingredients?: string | null;
   calories?: string | null;

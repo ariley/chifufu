@@ -31,6 +31,7 @@ export default function DetailScreen() {
     query: item.detailQuery || item.name,
     name: item.name,
     brand: item.brand || null,
+    productSize: item.productSize ?? null,
     imageUrl: item.imageUrl,
     ingredients: item.ingredients ?? null,
     calories: item.calories ?? null,
@@ -50,6 +51,7 @@ export default function DetailScreen() {
       setDetails({
         ...next,
         imageUrl: next.imageUrl || item.imageUrl,
+        productSize: next.productSize || item.productSize || null,
         ingredients: next.ingredients || item.ingredients || null,
         calories: next.calories || item.calories || null,
         nutrition: next.nutrition || item.nutrition || null,
@@ -103,6 +105,7 @@ export default function DetailScreen() {
 
         <Text style={[styles.title, { color: text }]}>{details?.name || item.name}</Text>
         {!!details?.brand && <Text style={[styles.subtitle, { color: textSec }]}>{details.brand}</Text>}
+        {!!details?.productSize && <Text style={[styles.subtitle, { color: textSec }]}>{details.productSize}</Text>}
         <Text style={[styles.storeLine, { color: textTer }]}>
           {item.storeName ? `${item.storeName} · ` : ''}{item.price}
         </Text>

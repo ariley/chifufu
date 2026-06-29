@@ -11,10 +11,12 @@ app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
+const RESULTS_CACHE_VERSION = 'products-v2';
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
 const PRODUCT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const resultsCache = new Map();
 const productDetailsCache = new Map();
+const productCandidatesCache = new Map();
 const pendingResults = new Map();
 const backgroundRefreshes = new Map();
 
@@ -29,6 +31,7 @@ function coordinateCachePart(value) {
 
 function getResultsCacheKey({ location, category, searchQuery, lat, lng }) {
   return [
+    RESULTS_CACHE_VERSION,
     normalizeCachePart(location),
     normalizeCachePart(category),
     normalizeCachePart(searchQuery),
@@ -63,6 +66,20 @@ function getCachedProductDetails(key) {
 
 function setCachedProductDetails(key, details) {
   productDetailsCache.set(key, { createdAt: Date.now(), details });
+}
+
+function getCachedProductCandidates(key) {
+  const cached = productCandidatesCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.createdAt > PRODUCT_CACHE_TTL_MS) {
+    productCandidatesCache.delete(key);
+    return null;
+  }
+  return cached.items;
+}
+
+function setCachedProductCandidates(key, items) {
+  productCandidatesCache.set(key, { createdAt: Date.now(), items });
 }
 
 function withTimeout(promise, timeoutMs) {
@@ -173,8 +190,8 @@ function getPriceHint(searchQuery) {
 }
 
 function productDetailQuery(searchQuery) {
-  const hint = getPriceHint(searchQuery);
-  return hint.name;
+  const query = String(searchQuery || '').trim();
+  return query || getPriceHint(searchQuery).name;
 }
 
 function nutrientValue(nutriments, key, unit = '') {
@@ -182,6 +199,19 @@ function nutrientValue(nutriments, key, unit = '') {
   if (!Number.isFinite(value)) return undefined;
   const rounded = Math.round(value * 10) / 10;
   return `${rounded}${unit}`;
+}
+
+function cleanText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function withoutBrandPrefix(name, brand) {
+  const cleanName = cleanText(name);
+  const cleanBrand = cleanText(String(brand || '').split(',')[0]);
+  if (!cleanName || !cleanBrand) return cleanName;
+  return cleanName.toLowerCase().startsWith(`${cleanBrand.toLowerCase()} `)
+    ? cleanName.slice(cleanBrand.length).trim()
+    : cleanName;
 }
 
 function mapOpenFoodFactsProduct(product, query) {
@@ -201,8 +231,9 @@ function mapOpenFoodFactsProduct(product, query) {
 
   return {
     query,
-    name: product?.product_name || product?.generic_name || query,
-    brand: product?.brands || null,
+    name: withoutBrandPrefix(product?.product_name || product?.generic_name || query, product?.brands),
+    brand: cleanText(product?.brands) || null,
+    productSize: cleanText(product?.quantity) || cleanText(product?.serving_size) || null,
     imageUrl: product?.image_front_url || product?.image_url || null,
     ingredients: product?.ingredients_text_en || product?.ingredients_text || null,
     calories: calories || null,
@@ -222,11 +253,155 @@ function mapOpenFoodFactsProduct(product, query) {
   };
 }
 
+const PRODUCT_QUERY_ALIASES = new Map([
+  ['norwegian cream cheese', ['snofrisk', 'snofrisk cream cheese', 'tine cream cheese', 'tine']],
+  ['italian provolone cheese', ['italian provolone', 'provolone cheese', 'provolone']],
+  ['italian provolone', ['italian provolone cheese', 'provolone cheese', 'provolone']],
+]);
+
+const CURATED_PRODUCT_CANDIDATES = [
+  {
+    patterns: [/norwegian cream cheese/i, /snofrisk/i, /snøfrisk/i],
+    products: [
+      {
+        query: 'TINE Snofrisk fresh spreadable cream cheese',
+        name: 'Snofrisk Fresh Spreadable Cheese',
+        brand: 'TINE',
+        productSize: '4.4 oz',
+        imageUrl: 'https://www.instacart.com/assets/domains/product-image/file/large_5fdbb4a0-fc31-4968-b555-ba6ad994267a.png',
+        ingredients: "Goat's milk, cow's cream, salt, bacterial culture.",
+        calories: '70 kcal',
+        nutrition: {
+          calories: '70 kcal',
+          fat: '7 g',
+          sugars: '1 g',
+          protein: '2 g',
+          servingSize: '1 oz',
+        },
+        productUrl: 'https://order.earthfare.com/store/earth-fare-market/products/115845-snofrisk-fresh-spreadable-cream-cheese-4-4-oz',
+        source: 'Earth Fare',
+      },
+      {
+        query: 'TINE Norwegian Cream Cheese Plain',
+        name: 'Norwegian Cream Cheese Plain',
+        brand: 'TINE',
+        productSize: '125 g',
+        imageUrl: 'https://www.tine.com/products/tine-cream-cheese/cream-cheese-natural/_/image/dffb90a7-f9c7-430a-8f36-97d278ed0996%3A7547567bdc18554e0b33fe7fe8a70faab511c7f3/width-460/TWN_Cream%20Cheese%20Naturell.png?quality=60',
+        ingredients: "Pasteurized goat's milk, pasteurized cream from cow's milk, salt, bacterial culture.",
+        calories: '243 kcal / 100g',
+        nutrition: {
+          calories: '243 kcal / 100g',
+          fat: '23 g / 100g',
+          carbs: '2.9 g / 100g',
+          sugars: '2.6 g / 100g',
+          sodium: '520 mg / 100g',
+          protein: '6.6 g / 100g',
+          servingSize: '100 g',
+        },
+        productUrl: 'https://www.tine.com/products/tine-cream-cheese/cream-cheese-natural',
+        source: 'TINE',
+      },
+    ],
+  },
+];
+
+function getCuratedProductCandidates(searchQuery) {
+  const query = String(searchQuery || '');
+  return CURATED_PRODUCT_CANDIDATES
+    .filter(group => group.patterns.some(pattern => pattern.test(query)))
+    .flatMap(group => group.products);
+}
+
+function buildOpenFoodFactsTerms(searchQuery) {
+  const query = productDetailQuery(searchQuery);
+  const normalized = normalizeCachePart(query);
+  const hint = getPriceHint(query);
+  const terms = [];
+  const aliases = PRODUCT_QUERY_ALIASES.get(normalized);
+  if (aliases) terms.push(...aliases);
+  terms.push(query);
+  if (hint.name && normalizeCachePart(hint.name) !== normalized) {
+    terms.push(hint.name);
+  }
+  return [...new Set(terms.map(cleanText).filter(Boolean))];
+}
+
+async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1200) {
+  const cacheKey = `candidates:${normalizeCachePart(searchQuery)}:${limit}`;
+  const cached = getCachedProductCandidates(cacheKey);
+  if (cached) return cached;
+
+  const seen = new Set();
+  const candidates = [];
+  for (const product of getCuratedProductCandidates(searchQuery)) {
+    const key = normalizeCachePart(`${product.brand || ''}|${product.name}|${product.productSize || ''}`);
+    if (!seen.has(key)) {
+      seen.add(key);
+      candidates.push(product);
+      setCachedProductDetails(normalizeCachePart([product.brand, product.name].filter(Boolean).join(' ')), product);
+    }
+  }
+  if (candidates.length >= 2) {
+    setCachedProductCandidates(cacheKey, candidates.slice(0, limit));
+    return candidates.slice(0, limit);
+  }
+
+  const terms = buildOpenFoodFactsTerms(searchQuery);
+  const perTermLimit = Math.max(limit, 8);
+  const deadline = Date.now() + timeoutMs;
+
+  for (const term of terms) {
+    if (Date.now() >= deadline || candidates.length >= limit) break;
+    const params = new URLSearchParams({
+      search_terms: term,
+      search_simple: '1',
+      action: 'process',
+      json: '1',
+      page_size: String(perTermLimit),
+      sort_by: 'unique_scans_n',
+    });
+
+    try {
+      const remainingMs = Math.max(250, deadline - Date.now());
+      const resp = await withTimeout(fetch(`https://world.openfoodfacts.org/cgi/search.pl?${params}`, {
+        headers: { 'User-Agent': 'Chifufu/1.0 (contact@chifufu.com)' },
+      }), remainingMs);
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      for (const product of data.products ?? []) {
+        const details = mapOpenFoodFactsProduct(product, term);
+        const key = normalizeCachePart(`${details.brand || ''}|${details.name}|${details.productSize || ''}`);
+        if (!details.name || seen.has(key)) continue;
+        seen.add(key);
+        candidates.push(details);
+        setCachedProductDetails(normalizeCachePart([details.brand, details.name].filter(Boolean).join(' ')), details);
+        if (candidates.length >= limit) break;
+      }
+    } catch (err) {
+      if (err.message !== 'timeout') {
+        console.error('product candidates fetch error:', err.message);
+      }
+    }
+  }
+
+  setCachedProductCandidates(cacheKey, candidates);
+  return candidates;
+}
+
 async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
   const query = productDetailQuery(searchQuery);
   const cacheKey = normalizeCachePart(query);
   const cached = getCachedProductDetails(cacheKey);
   if (cached) return cached;
+
+  const curated = getCuratedProductCandidates(query).find(product => {
+    const text = normalizeCachePart([product.brand, product.name, product.query].filter(Boolean).join(' '));
+    return text.includes(cacheKey) || cacheKey.includes(normalizeCachePart(product.name));
+  });
+  if (curated) {
+    setCachedProductDetails(cacheKey, curated);
+    return curated;
+  }
 
   const params = new URLSearchParams({
     search_terms: query,
@@ -234,6 +409,7 @@ async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
     action: 'process',
     json: '1',
     page_size: '1',
+    sort_by: 'unique_scans_n',
   });
 
   try {
@@ -262,9 +438,26 @@ function storePriceMultiplier(place, index) {
   return 0.88 + (priceLevel * 0.08) + (index * 0.035) + Math.max(0, rating - 4) * 0.04 + Math.min(distance, 6) * 0.015;
 }
 
-function buildInstantResults({ location, category, searchQuery, places, productDetails }) {
+function fallbackProductCandidate(searchQuery) {
+  const hint = getPriceHint(searchQuery);
+  return {
+    query: productDetailQuery(searchQuery),
+    name: `${hint.name} (${hint.size})`,
+    brand: null,
+    productSize: hint.size,
+    imageUrl: null,
+    ingredients: null,
+    calories: null,
+    nutrition: null,
+    productUrl: null,
+    source: 'fallback',
+  };
+}
+
+function buildInstantResults({ location, category, searchQuery, places, productCandidates }) {
   const hint = getPriceHint(searchQuery);
   const usablePlaces = (places.length > 0 ? places : DEFAULT_STORES).slice(0, 8);
+  const candidates = productCandidates?.length ? productCandidates : [fallbackProductCandidate(searchQuery)];
   const badgeFor = (place, index) => {
     const badges = [];
     if (index < 2) badges.push('deal');
@@ -274,23 +467,27 @@ function buildInstantResults({ location, category, searchQuery, places, productD
 
   return usablePlaces
     .map((place, index) => {
+      const product = candidates[index % candidates.length];
       const priceValue = Math.max(0.79, hint.base * storePriceMultiplier(place, index));
       const rounded = Math.round(priceValue * 100) / 100;
+      const detailQuery = [product.brand, product.name].filter(Boolean).join(' ') || product.query || searchQuery;
       return {
         id: `instant-${index}-${normalizeCachePart(place.name).replace(/[^a-z0-9]+/g, '-')}`,
         name: place.name,
-        description: `${hint.name} (${hint.size})`,
+        description: product.name || `${hint.name} (${hint.size})`,
+        brand: product.brand || null,
+        productSize: product.productSize || null,
         price: `$${rounded.toFixed(2)}`,
         priceValue: rounded,
         distance: place.distMi ? `${place.distMi} mi` : 'nearby',
         badges: badgeFor(place, index),
         address: place.address || location,
-        imageUrl: productDetails?.imageUrl ?? null,
-        ingredients: productDetails?.ingredients ?? null,
-        calories: productDetails?.calories ?? null,
-        nutrition: productDetails?.nutrition ?? null,
-        productUrl: productDetails?.productUrl ?? null,
-        detailQuery: hint.name,
+        imageUrl: product.imageUrl ?? null,
+        ingredients: product.ingredients ?? null,
+        calories: product.calories ?? null,
+        nutrition: product.nutrition ?? null,
+        productUrl: product.productUrl ?? null,
+        detailQuery,
         lat: place.lat,
         lng: place.lng,
         rating: place.rating,
@@ -646,9 +843,9 @@ app.post('/api/results', async (req, res) => {
   res.set('X-Chifufu-Cache', 'MISS');
   const generation = Promise.all([
     resolvePlaces({ location, category, lat, lng }),
-    fetchProductDetails(searchQuery, 900),
-  ]).then(([places, productDetails]) => {
-    const items = buildInstantResults({ location, category, searchQuery, places, productDetails });
+    searchOpenFoodFactsProducts(searchQuery, 6, 1100),
+  ]).then(([places, productCandidates]) => {
+    const items = buildInstantResults({ location, category, searchQuery, places, productCandidates });
     setCachedResults(cacheKey, items);
     refreshResultsInBackground(cacheKey, { location, category, searchQuery, places });
     return items;

@@ -32,6 +32,7 @@
     "web": "expo start --web",
     "prewarm:results": "CONCURRENCY=1 ROUNDS=1 node tests/load/results-smoke.mjs",
     "test:results": "node tests/load/results-smoke.mjs",
+    "test:products": "node tests/load/product-results-regression.mjs",
     "stress:results": "CONCURRENCY=10 ROUNDS=5 node tests/load/results-smoke.mjs"
   },
   "private": true

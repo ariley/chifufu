@@ -29,7 +29,8 @@ function toGroceryItem(option: PricedStoreOption): GroceryItem {
     id: `${storeKey}-${option.id}`,
     upc: '',
     name: option.description,
-    brand: '',
+    brand: option.brand ?? '',
+    productSize: option.productSize ?? null,
     size: option.distance,
     price: option.price,
     priceValue: option.priceValue,
@@ -48,6 +49,14 @@ function toGroceryItem(option: PricedStoreOption): GroceryItem {
     storeId: storeKey,
     storeAddress: option.address,
   };
+}
+
+function displayNameWithBrand(item: GroceryItem) {
+  const brand = item.brand.trim();
+  if (!brand) return item.name;
+  return item.name.toLowerCase().startsWith(`${brand.toLowerCase()} `)
+    ? item.name
+    : `${brand} ${item.name}`;
 }
 
 export default function ResultsScreen() {
@@ -96,20 +105,35 @@ export default function ResultsScreen() {
       const nextResults = (pricedOptions ?? []).map(toGroceryItem);
       setResults(nextResults);
 
-      const detailQuery = nextResults.find(item => item.detailQuery)?.detailQuery || query;
-      const needsDetails = nextResults.some(item => !item.imageUrl || !item.ingredients || !item.calories);
-      if (needsDetails && detailQuery) {
-        fetchProductDetails(detailQuery)
-          .then((details) => {
+      const detailQueries = [...new Set(nextResults
+        .filter(item => !item.imageUrl || !item.ingredients || !item.calories)
+        .map(item => item.detailQuery || [item.brand, item.name].filter(Boolean).join(' '))
+        .filter(Boolean))];
+
+      if (detailQueries.length > 0) {
+        Promise.allSettled(detailQueries.map(detailQuery => fetchProductDetails(detailQuery)))
+          .then((settledDetails) => {
             if (seq !== loadSeq.current) return;
-            setResults(current => current.map(item => ({
-              ...item,
-              imageUrl: item.imageUrl || details.imageUrl || null,
-              ingredients: item.ingredients || details.ingredients || null,
-              calories: item.calories || details.calories || null,
-              nutrition: item.nutrition || details.nutrition || null,
-              productUrl: item.productUrl || details.productUrl || null,
-            })));
+            const detailsByQuery = new Map<string, Awaited<ReturnType<typeof fetchProductDetails>>>();
+            settledDetails.forEach((result, index) => {
+              if (result.status === 'fulfilled') {
+                detailsByQuery.set(detailQueries[index], result.value);
+              }
+            });
+            setResults(current => current.map(item => {
+              const detailQuery = item.detailQuery || [item.brand, item.name].filter(Boolean).join(' ');
+              const details = detailsByQuery.get(detailQuery);
+              if (!details) return item;
+              return {
+                ...item,
+                imageUrl: item.imageUrl || details.imageUrl || null,
+                ingredients: item.ingredients || details.ingredients || null,
+                calories: item.calories || details.calories || null,
+                nutrition: item.nutrition || details.nutrition || null,
+                productUrl: item.productUrl || details.productUrl || null,
+                productSize: item.productSize || details.productSize || null,
+              };
+            }));
           })
           .catch(() => {});
       }
@@ -170,10 +194,10 @@ export default function ResultsScreen() {
             <View style={styles.cardTopRow}>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.cardName, { color: text }]} numberOfLines={2}>
-                  {item.brand ? `${item.brand} ` : ''}{item.name}
+                  {displayNameWithBrand(item)}
                 </Text>
                 <Text style={[styles.cardSize, { color: textSec }]} numberOfLines={1}>
-                  {item.size}
+                  {[item.productSize, item.size].filter(Boolean).join(' · ')}
                 </Text>
                 {item.storeName ? (
                   <Text style={[styles.cardStore, { color: textTer }]} numberOfLines={1}>

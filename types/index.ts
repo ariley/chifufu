@@ -3,6 +3,7 @@ export interface GroceryItem {
   upc: string;
   name: string;
   brand: string;
+  productSize?: string | null;
   size: string;
   price: string;        // "$9.99"
   priceValue: number;   // 9.99
@@ -38,6 +39,7 @@ export interface ProductDetails {
   query: string;
   name: string;
   brand?: string | null;
+  productSize?: string | null;
   imageUrl?: string | null;
   ingredients?: string | null;
   calories?: string | null;
