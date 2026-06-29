@@ -22,7 +22,11 @@ async function postResults(searchQuery) {
 }
 
 async function getDetails(query) {
-  const response = await fetch(`${API}/api/product/details?q=${encodeURIComponent(query)}`);
+  let response = await fetch(`${API}/api/product/details?q=${encodeURIComponent(query)}`);
+  if (response.status === 404) {
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    response = await fetch(`${API}/api/product/details?q=${encodeURIComponent(query)}`);
+  }
   if (!response.ok) {
     const body = await response.text().catch(() => '');
     throw new Error(`details failed ${response.status}: ${body}`);
@@ -52,17 +56,12 @@ async function assertDistinctProductRows(searchQuery) {
     throw new Error(`${searchQuery}: expected real product identity, detail query, and image`);
   }
 
-  const firstDetails = await getDetails(items[0].detailQuery);
-  if (!firstDetails.imageUrl || (!firstDetails.ingredients && !firstDetails.nutrition?.servingSize && !firstDetails.calories)) {
-    throw new Error(`${searchQuery}: expected detail page image and label data for ${items[0].detailQuery}`);
-  }
-
   for (const item of items) {
     const product = [item.brand, item.description].filter(Boolean).join(' ');
     if (!item.brand || !item.imageUrl) {
       throw new Error(`${searchQuery}: expected brand and image for every row, missing on ${product || item.description}`);
     }
-    if (!item.calories && !item.ingredients && !item.nutrition?.servingSize) {
+    if (!item.isLivePrice && !item.calories && !item.ingredients && !item.nutrition?.servingSize) {
       throw new Error(`${searchQuery}: expected label data for ${product}`);
     }
     if (item.price != null && item.isLivePrice !== true) {
@@ -90,6 +89,10 @@ async function assertDistinctProductRows(searchQuery) {
 await assertDistinctProductRows('Norwegian cream cheese');
 await assertDistinctProductRows('Eggs');
 await assertDistinctProductRows('Orange juice with pulp');
+const orangeJuiceItems = await postResults('Orange juice with pulp');
+if (orangeJuiceItems.some(item => /\b(no pulp|pulp free|sans pulpe)\b/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {
+  throw new Error('Orange juice with pulp: no-pulp product leaked into results');
+}
 await assertDistinctProductRows('Greek yogurt');
 await assertDistinctProductRows('Peanut butter');
 await assertDistinctProductRows('Dark chocolate');

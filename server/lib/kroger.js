@@ -116,6 +116,7 @@ async function fetchProductsForTerm(token, term, locationId, limit) {
       onSale,
       savings: onSale ? `$${(regularPrice - promoPrice).toFixed(2)} off` : null,
       imageUrl: p.images?.find(i => i.perspective === 'front')?.sizes?.find(s => s.size === 'medium')?.url ?? null,
+      relevanceRank: productRelevanceRank(term, p.description, p.brand, size),
       badges: [
         onSale && 'sale',
         p.brand?.toLowerCase().includes('kroger') && 'store brand',
@@ -123,7 +124,7 @@ async function fetchProductsForTerm(token, term, locationId, limit) {
     };
   })
   .filter(p => p.priceValue != null)
-  .sort((a, b) => a.priceValue - b.priceValue);
+  .sort((a, b) => a.relevanceRank - b.relevanceRank || a.priceValue - b.priceValue);
 
   return pricedProducts.filter(productMatchesQuery(term));
 }
@@ -131,34 +132,43 @@ async function fetchProductsForTerm(token, term, locationId, limit) {
 module.exports = { findNearestStore, searchProducts };
 
 function productMatchesQuery(query) {
-  const tokens = String(query)
+  const rawTokens = String(query)
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter(Boolean)
-    .map(token => token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token);
+    .filter(Boolean);
+  const tokens = rawTokens.map(token => token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token);
 
   return product => {
-    const haystackTokens = new Set([product.name, product.brand, product.size]
+    const productText = [product.name, product.brand, product.size]
       .filter(Boolean)
       .join(' ')
-      .toLowerCase()
+      .toLowerCase();
+    if (/\bwith pulp\b/.test(String(query).toLowerCase()) && /\b(no pulp|pulp free|sans pulpe)\b/.test(productText)) {
+      return false;
+    }
+    const rawHaystackTokens = new Set(productText
       .split(/[^a-z0-9]+/)
-      .filter(Boolean)
+      .filter(Boolean));
+    const haystackTokens = new Set([...rawHaystackTokens]
       .map(token => token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token));
 
-    return tokens.every(token => haystackTokens.has(token));
+    return tokens.every((token, index) => {
+      const rawToken = rawTokens[index];
+      if (rawToken.length > 3 && rawToken.endsWith('s')) {
+        return rawHaystackTokens.has(rawToken);
+      }
+      return haystackTokens.has(token);
+    });
   };
 }
 
 function buildSearchTerms(query) {
-  const normalizedQuery = String(query).trim().toLowerCase();
   const tokens = String(query)
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter(token => token.length > 2);
   const terms = [String(query).trim()];
-  const aliases = QUERY_ALIASES.get(normalizedQuery);
-  if (aliases) terms.push(...aliases);
+  const coreTokens = tokens.filter(token => !GENERIC_PRODUCT_MODIFIERS.has(token));
 
   if (tokens.length >= 2) {
     const phrase = tokens.slice(-2).join(' ');
@@ -167,15 +177,26 @@ function buildSearchTerms(query) {
     }
   }
 
-  const productToken = tokens.find(token => !GENERIC_PRODUCT_MODIFIERS.has(token));
-  if (productToken) terms.push(productToken);
+  if (coreTokens.length >= 2) {
+    terms.push(coreTokens.join(' '));
+  } else if (coreTokens.length === 1) {
+    terms.push(coreTokens[0]);
+  }
 
   return [...new Set(terms.filter(Boolean))];
 }
 
-const QUERY_ALIASES = new Map([
-  ['norwegian cream cheese', ['snofrisk', 'tine']],
-]);
+function productRelevanceRank(query, name, brand, size) {
+  const queryTokens = String(query).toLowerCase().split(/[^a-z0-9]+/).filter(token => token.length > 2);
+  const productTokens = [name, brand, size].filter(Boolean).join(' ').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  const productText = productTokens.join(' ');
+  const queryText = queryTokens.join(' ');
+  const extraTokens = Math.max(0, productTokens.length - queryTokens.length);
+  if (queryText && productText === queryText) return extraTokens;
+  if (queryText && productText.startsWith(`${queryText} `)) return 10 + extraTokens;
+  if (queryText && productText.includes(` ${queryText} `)) return 20 + extraTokens;
+  return 100 + extraTokens;
+}
 
 const GENERIC_FALLBACK_PHRASES = new Set([
   'cream cheese',

@@ -291,9 +291,10 @@ function productSearchText(product) {
 function isRelevantProductCandidate(product, searchQuery, originalSearchQuery = searchQuery) {
   const query = normalizeSearchTokens(productDetailQuery(searchQuery)).join(' ');
   const originalQuery = normalizeSearchTokens(productDetailQuery(originalSearchQuery)).join(' ');
-  const text = normalizeSearchTokens(productSearchText(product)).join(' ');
+  const rawText = normalizeCachePart(productSearchText(product));
+  const text = normalizeSearchTokens(rawText).join(' ');
   if (!query || !text) return false;
-  if (originalQuery.includes('with pulp') && /\b(no pulp|pulp free)\b/.test(text)) return false;
+  if (originalQuery.includes('with pulp') && /\b(no pulp|pulp free|sans pulpe)\b/.test(rawText)) return false;
   if (text.includes(query)) return true;
 
   if (query === 'israeli feta') {
@@ -379,7 +380,7 @@ const PRODUCT_SEARCH_MODIFIERS = new Set([
   'shredded',
 ]);
 
-async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1200) {
+async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1200, allowCoreFallback = true) {
   const cacheKey = `candidates:${normalizeCachePart(searchQuery)}:${limit}`;
   const cached = getCachedProductCandidates(cacheKey);
   if (cached) return cached;
@@ -415,11 +416,18 @@ async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1
   if (candidates.length > 0) {
     setCachedProductCandidates(cacheKey, candidates);
   }
+  if (candidates.length === 0 && allowCoreFallback) {
+    const hint = getPriceHint(searchQuery);
+    const fallbackQuery = cleanText(hint.name);
+    if (fallbackQuery && normalizeCachePart(fallbackQuery) !== normalizeCachePart(searchQuery)) {
+      return searchOpenFoodFactsProducts(fallbackQuery, limit, Math.max(600, timeoutMs), false);
+    }
+  }
   return candidates;
 }
 
 async function fetchOpenFoodFactsSearch(term, limit, timeoutMs) {
-  const params = new URLSearchParams({
+  const cgiParams = new URLSearchParams({
     search_terms: term,
     search_simple: '1',
     action: 'process',
@@ -427,24 +435,61 @@ async function fetchOpenFoodFactsSearch(term, limit, timeoutMs) {
     page_size: String(limit),
     sort_by: 'unique_scans_n',
   });
-  const hosts = ['world.openfoodfacts.org', 'us.openfoodfacts.org'];
+  const apiParams = new URLSearchParams({
+    search_terms: term,
+    page_size: String(limit),
+    sort_by: 'unique_scans_n',
+    fields: [
+      'product_name',
+      'generic_name',
+      'brands',
+      'quantity',
+      'serving_size',
+      'image_front_url',
+      'image_url',
+      'ingredients_text_en',
+      'ingredients_text',
+      'nutriments',
+      'allergens_tags',
+      'labels_tags',
+      'categories_tags',
+      'url',
+      'nutriscore_grade',
+    ].join(','),
+  });
+  const urls = [
+    `https://world.openfoodfacts.org/api/v2/search?${apiParams}`,
+    `https://world.openfoodfacts.org/cgi/search.pl?${cgiParams}`,
+    `https://us.openfoodfacts.org/api/v2/search?${apiParams}`,
+    `https://us.openfoodfacts.org/cgi/search.pl?${cgiParams}`,
+  ];
   let lastError = null;
+  const seen = new Set();
+  const products = [];
 
-  for (const host of hosts) {
+  for (const url of urls) {
     try {
-      const resp = await withTimeout(fetch(`https://${host}/cgi/search.pl?${params}`, {
+      const resp = await withTimeout(fetch(url, {
         headers: { 'User-Agent': 'Chifufu/1.0 (contact@chifufu.com)' },
       }), timeoutMs);
       if (!resp.ok) {
-        lastError = new Error(`Open Food Facts ${host} ${resp.status}`);
+        lastError = new Error(`Open Food Facts ${new URL(url).host} ${resp.status}`);
         continue;
       }
-      return await resp.json();
+      const data = await resp.json();
+      for (const product of data.products ?? []) {
+        const key = normalizeCachePart([product.code, product.brands, product.product_name, product.quantity].filter(Boolean).join('|'));
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        products.push(product);
+        if (products.length >= limit) return { products };
+      }
     } catch (err) {
       lastError = err;
     }
   }
 
+  if (products.length > 0) return { products };
   throw lastError ?? new Error('Open Food Facts search failed');
 }
 
@@ -517,6 +562,7 @@ async function searchKrogerPricedResults({ searchQuery, lat, lng, radiusMiles = 
         price: product.price,
         priceValue: product.priceValue,
         regularPrice: product.regularPrice,
+        relevanceRank: product.relevanceRank ?? 100,
         distance,
         badges: product.badges ?? [],
         address: store.address || '',
@@ -541,7 +587,7 @@ async function searchKrogerPricedResults({ searchQuery, lat, lng, radiusMiles = 
 
   return rows
     .filter(row => row.priceValue != null)
-    .sort((a, b) => a.priceValue - b.priceValue)
+    .sort((a, b) => a.relevanceRank - b.relevanceRank || a.priceValue - b.priceValue)
     .slice(0, limit);
 }
 
@@ -834,7 +880,7 @@ app.get('/api/product/details', async (req, res) => {
   const { q } = req.query;
   if (!q) return res.status(400).json({ error: 'q is required' });
 
-  const details = await fetchProductDetails(String(q), 1800);
+  const details = await fetchProductDetails(String(q), 3500);
   if (!details) {
     return res.status(404).json({ error: 'Product details not found' });
   }
@@ -875,7 +921,7 @@ app.post('/api/results', async (req, res) => {
       console.error('priced provider error:', err.message);
       return [];
     }),
-    searchOpenFoodFactsProducts(searchQuery, 12, 2400),
+    searchOpenFoodFactsProducts(searchQuery, 12, 4500),
   ]).then(([pricedItems, productCandidates]) => {
     const pricedDetailQueries = new Set(pricedItems.map(item => normalizeCachePart(item.detailQuery)));
     const catalogItems = buildCatalogResults({ searchQuery, productCandidates })
