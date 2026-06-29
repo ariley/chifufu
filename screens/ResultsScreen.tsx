@@ -15,7 +15,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { GroceryItem, RootStackParamList } from '../types';
-import { fetchPricedGroceryOptions, PricedStoreOption } from '../lib/api';
+import { fetchPricedGroceryOptions, fetchProductDetails, PricedStoreOption } from '../lib/api';
 import { useBucketContext } from '../App';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Results'>;
@@ -36,7 +36,12 @@ function toGroceryItem(option: PricedStoreOption): GroceryItem {
     regularPrice: '',
     onSale: option.badges?.includes('deal') ?? false,
     savings: null,
-    imageUrl: null,
+    imageUrl: option.imageUrl ?? null,
+    ingredients: option.ingredients ?? null,
+    calories: option.calories ?? null,
+    nutrition: option.nutrition ?? null,
+    productUrl: option.productUrl ?? null,
+    detailQuery: option.detailQuery ?? option.description,
     badges: option.badges ?? [],
     rating: option.rating,
     storeName: option.name,
@@ -88,7 +93,26 @@ export default function ResultsScreen() {
     try {
       const pricedOptions = await fetchPricedGroceryOptions(query, resultsLocationLabel, lat, lng);
       if (seq !== loadSeq.current) return;
-      setResults((pricedOptions ?? []).map(toGroceryItem));
+      const nextResults = (pricedOptions ?? []).map(toGroceryItem);
+      setResults(nextResults);
+
+      const detailQuery = nextResults.find(item => item.detailQuery)?.detailQuery || query;
+      const needsDetails = nextResults.some(item => !item.imageUrl || !item.ingredients || !item.calories);
+      if (needsDetails && detailQuery) {
+        fetchProductDetails(detailQuery)
+          .then((details) => {
+            if (seq !== loadSeq.current) return;
+            setResults(current => current.map(item => ({
+              ...item,
+              imageUrl: item.imageUrl || details.imageUrl || null,
+              ingredients: item.ingredients || details.ingredients || null,
+              calories: item.calories || details.calories || null,
+              nutrition: item.nutrition || details.nutrition || null,
+              productUrl: item.productUrl || details.productUrl || null,
+            })));
+          })
+          .catch(() => {});
+      }
     } catch (err) {
       if (seq !== loadSeq.current) return;
       setError(err instanceof Error ? err.message : 'Something went wrong');
@@ -106,7 +130,12 @@ export default function ResultsScreen() {
   function renderCard({ item }: { item: GroceryItem }) {
     const inList = isInBucket(item.id);
     return (
-      <View style={[styles.card, { backgroundColor: bg, borderColor: border }]}>
+      <TouchableOpacity
+        style={[styles.card, { backgroundColor: bg, borderColor: border }]}
+        onPress={() => navigation.navigate('Detail', { item })}
+        accessibilityRole="button"
+        accessibilityLabel={`Learn more about ${item.name}`}
+      >
         {/* Sale badge */}
         {item.onSale && (
           <View style={styles.saleBadge}>
@@ -119,17 +148,23 @@ export default function ResultsScreen() {
 
         <View style={styles.cardBody}>
           {/* Product image */}
-          {item.imageUrl ? (
-            <Image
-              source={{ uri: item.imageUrl }}
-              style={styles.productImage}
-              resizeMode="contain"
-            />
-          ) : (
-            <View style={[styles.productImagePlaceholder, { backgroundColor: bgSec }]}>
-              <Text style={{ fontSize: 28 }}>🛒</Text>
-            </View>
-          )}
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Detail', { item })}
+            accessibilityRole="button"
+            accessibilityLabel={`Learn more about ${item.name}`}
+          >
+            {item.imageUrl ? (
+              <Image
+                source={{ uri: item.imageUrl }}
+                style={styles.productImage}
+                resizeMode="contain"
+              />
+            ) : (
+              <View style={[styles.productImagePlaceholder, { backgroundColor: bgSec }]}>
+                <Text style={{ fontSize: 28 }}>🛒</Text>
+              </View>
+            )}
+          </TouchableOpacity>
 
           <View style={styles.cardInfo}>
             <View style={styles.cardTopRow}>
@@ -160,7 +195,10 @@ export default function ResultsScreen() {
                 { borderColor: inList ? accent : border },
                 inList && { backgroundColor: accent },
               ]}
-              onPress={() => handleAddToList(item)}
+              onPress={(event) => {
+                event.stopPropagation();
+                handleAddToList(item);
+              }}
               accessibilityRole="button"
               accessibilityLabel={inList ? 'In your list' : 'Add to list'}
             >
@@ -170,7 +208,7 @@ export default function ResultsScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   }
 

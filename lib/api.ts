@@ -32,9 +32,38 @@ export interface PricedStoreOption {
   distance: string;
   badges?: string[];
   address?: string;
+  imageUrl?: string | null;
+  ingredients?: string | null;
+  calories?: string | null;
+  nutrition?: {
+    calories?: string;
+    fat?: string;
+    carbs?: string;
+    sugars?: string;
+    protein?: string;
+    sodium?: string;
+    servingSize?: string;
+    nutriScore?: string | null;
+  } | null;
+  productUrl?: string | null;
+  detailQuery?: string;
   lat?: number;
   lng?: number;
   rating?: number;
+}
+
+export interface ProductDetailsResponse {
+  query: string;
+  name: string;
+  brand?: string | null;
+  imageUrl?: string | null;
+  ingredients?: string | null;
+  calories?: string | null;
+  nutrition?: PricedStoreOption['nutrition'];
+  allergens?: string[];
+  labels?: string[];
+  productUrl?: string | null;
+  source?: string;
 }
 
 export async function fetchPricedGroceryOptions(
@@ -61,4 +90,15 @@ export async function fetchPricedGroceryOptions(
   }
 
   return res.json() as Promise<PricedStoreOption[]>;
+}
+
+export async function fetchProductDetails(query: string) {
+  const res = await fetch(`${BASE}/api/product/details?q=${encodeURIComponent(query)}`);
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.error || `Request failed ${res.status}`);
+  }
+
+  return res.json() as Promise<ProductDetailsResponse>;
 }

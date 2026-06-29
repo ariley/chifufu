@@ -10,12 +10,42 @@ export interface GroceryItem {
   onSale: boolean;
   savings: string | null;
   imageUrl: string | null;
+  ingredients?: string | null;
+  calories?: string | null;
+  nutrition?: ProductNutrition | null;
+  productUrl?: string | null;
+  detailQuery?: string;
   badges: string[];
   rating?: number;
   // store context (added client-side)
   storeName?: string;
   storeId?: string;
   storeAddress?: string;
+}
+
+export interface ProductNutrition {
+  calories?: string;
+  fat?: string;
+  carbs?: string;
+  sugars?: string;
+  protein?: string;
+  sodium?: string;
+  servingSize?: string;
+  nutriScore?: string | null;
+}
+
+export interface ProductDetails {
+  query: string;
+  name: string;
+  brand?: string | null;
+  imageUrl?: string | null;
+  ingredients?: string | null;
+  calories?: string | null;
+  nutrition?: ProductNutrition | null;
+  allergens?: string[];
+  labels?: string[];
+  productUrl?: string | null;
+  source?: string;
 }
 
 export interface GroceryStore {
@@ -36,6 +66,7 @@ export interface BucketItem extends GroceryItem {
 export type RootStackParamList = {
   Home: undefined;
   Results: { query: string; lat?: number; lng?: number; locationLabel?: string };
+  Detail: { item: GroceryItem };
   Bucket: undefined;
   Settings: undefined;
   Auth: { verified?: boolean; email?: string } | undefined;

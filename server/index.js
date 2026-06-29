@@ -12,7 +12,9 @@ app.use('/api/auth', authRoutes);
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
+const PRODUCT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const resultsCache = new Map();
+const productDetailsCache = new Map();
 const pendingResults = new Map();
 const backgroundRefreshes = new Map();
 
@@ -47,6 +49,27 @@ function getCachedResults(key) {
 
 function setCachedResults(key, items) {
   resultsCache.set(key, { createdAt: Date.now(), items });
+}
+
+function getCachedProductDetails(key) {
+  const cached = productDetailsCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.createdAt > PRODUCT_CACHE_TTL_MS) {
+    productDetailsCache.delete(key);
+    return null;
+  }
+  return cached.details;
+}
+
+function setCachedProductDetails(key, details) {
+  productDetailsCache.set(key, { createdAt: Date.now(), details });
+}
+
+function withTimeout(promise, timeoutMs) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs)),
+  ]);
 }
 
 async function resolvePlaces({ location, category, lat, lng }) {
@@ -149,6 +172,89 @@ function getPriceHint(searchQuery) {
   };
 }
 
+function productDetailQuery(searchQuery) {
+  const hint = getPriceHint(searchQuery);
+  return hint.name;
+}
+
+function nutrientValue(nutriments, key, unit = '') {
+  const value = nutriments?.[key];
+  if (!Number.isFinite(value)) return undefined;
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded}${unit}`;
+}
+
+function mapOpenFoodFactsProduct(product, query) {
+  const nutriments = product?.nutriments ?? {};
+  const calories = nutrientValue(nutriments, 'energy-kcal_serving', ' kcal')
+    ?? nutrientValue(nutriments, 'energy-kcal_100g', ' kcal / 100g');
+  const nutrition = {
+    calories,
+    fat: nutrientValue(nutriments, 'fat_serving', ' g') ?? nutrientValue(nutriments, 'fat_100g', ' g / 100g'),
+    carbs: nutrientValue(nutriments, 'carbohydrates_serving', ' g') ?? nutrientValue(nutriments, 'carbohydrates_100g', ' g / 100g'),
+    sugars: nutrientValue(nutriments, 'sugars_serving', ' g') ?? nutrientValue(nutriments, 'sugars_100g', ' g / 100g'),
+    protein: nutrientValue(nutriments, 'proteins_serving', ' g') ?? nutrientValue(nutriments, 'proteins_100g', ' g / 100g'),
+    sodium: nutrientValue(nutriments, 'sodium_serving', ' mg') ?? nutrientValue(nutriments, 'sodium_100g', ' mg / 100g'),
+    servingSize: product?.serving_size || undefined,
+    nutriScore: product?.nutriscore_grade ?? null,
+  };
+
+  return {
+    query,
+    name: product?.product_name || product?.generic_name || query,
+    brand: product?.brands || null,
+    imageUrl: product?.image_front_url || product?.image_url || null,
+    ingredients: product?.ingredients_text_en || product?.ingredients_text || null,
+    calories: calories || null,
+    nutrition,
+    allergens: String(product?.allergens_tags || '')
+      .split(',')
+      .map(tag => tag.replace(/^en:/, '').replace(/-/g, ' '))
+      .filter(Boolean)
+      .slice(0, 8),
+    labels: String(product?.labels_tags || '')
+      .split(',')
+      .map(tag => tag.replace(/^en:/, '').replace(/-/g, ' '))
+      .filter(Boolean)
+      .slice(0, 8),
+    productUrl: product?.url || null,
+    source: 'Open Food Facts',
+  };
+}
+
+async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
+  const query = productDetailQuery(searchQuery);
+  const cacheKey = normalizeCachePart(query);
+  const cached = getCachedProductDetails(cacheKey);
+  if (cached) return cached;
+
+  const params = new URLSearchParams({
+    search_terms: query,
+    search_simple: '1',
+    action: 'process',
+    json: '1',
+    page_size: '1',
+  });
+
+  try {
+    const resp = await withTimeout(fetch(`https://world.openfoodfacts.org/cgi/search.pl?${params}`, {
+      headers: { 'User-Agent': 'Chifufu/1.0 (contact@chifufu.com)' },
+    }), timeoutMs);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const product = data.products?.[0];
+    if (!product) return null;
+    const details = mapOpenFoodFactsProduct(product, query);
+    setCachedProductDetails(cacheKey, details);
+    return details;
+  } catch (err) {
+    if (err.message !== 'timeout') {
+      console.error('product details fetch error:', err.message);
+    }
+    return null;
+  }
+}
+
 function storePriceMultiplier(place, index) {
   const priceLevel = Number.isFinite(place.priceLevel) ? place.priceLevel : 1;
   const rating = Number.isFinite(place.rating) ? place.rating : 4;
@@ -156,7 +262,7 @@ function storePriceMultiplier(place, index) {
   return 0.88 + (priceLevel * 0.08) + (index * 0.035) + Math.max(0, rating - 4) * 0.04 + Math.min(distance, 6) * 0.015;
 }
 
-function buildInstantResults({ location, category, searchQuery, places }) {
+function buildInstantResults({ location, category, searchQuery, places, productDetails }) {
   const hint = getPriceHint(searchQuery);
   const usablePlaces = (places.length > 0 ? places : DEFAULT_STORES).slice(0, 8);
   const badgeFor = (place, index) => {
@@ -179,6 +285,12 @@ function buildInstantResults({ location, category, searchQuery, places }) {
         distance: place.distMi ? `${place.distMi} mi` : 'nearby',
         badges: badgeFor(place, index),
         address: place.address || location,
+        imageUrl: productDetails?.imageUrl ?? null,
+        ingredients: productDetails?.ingredients ?? null,
+        calories: productDetails?.calories ?? null,
+        nutrition: productDetails?.nutrition ?? null,
+        productUrl: productDetails?.productUrl ?? null,
+        detailQuery: hint.name,
         lat: place.lat,
         lng: place.lng,
         rating: place.rating,
@@ -491,6 +603,18 @@ app.get('/api/kroger/search', async (req, res) => {
   }
 });
 
+// ── Product details: image, ingredients, nutrition ─────────────
+app.get('/api/product/details', async (req, res) => {
+  const { q } = req.query;
+  if (!q) return res.status(400).json({ error: 'q is required' });
+
+  const details = await fetchProductDetails(String(q), 1800);
+  if (!details) {
+    return res.status(404).json({ error: 'Product details not found' });
+  }
+  res.json(details);
+});
+
 app.get('/', (_req, res) => res.json({ name: 'Chifufu API', status: 'ok', version: '2.0' }));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
@@ -520,8 +644,11 @@ app.post('/api/results', async (req, res) => {
   }
 
   res.set('X-Chifufu-Cache', 'MISS');
-  const generation = resolvePlaces({ location, category, lat, lng }).then(places => {
-    const items = buildInstantResults({ location, category, searchQuery, places });
+  const generation = Promise.all([
+    resolvePlaces({ location, category, lat, lng }),
+    fetchProductDetails(searchQuery, 900),
+  ]).then(([places, productDetails]) => {
+    const items = buildInstantResults({ location, category, searchQuery, places, productDetails });
     setCachedResults(cacheKey, items);
     refreshResultsInBackground(cacheKey, { location, category, searchQuery, places });
     return items;

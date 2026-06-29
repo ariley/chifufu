@@ -9,6 +9,7 @@ import BucketScreen from './screens/BucketScreen';
 import AuthScreen from './screens/AuthScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import DetailScreen from './screens/DetailScreen';
 import { useSaved } from './hooks/useSaved';
 import { useBucket } from './hooks/useBucket';
 import { useSavedRoutes, SavedRoute } from './hooks/useSavedRoutes';
@@ -128,6 +129,7 @@ export default function App() {
               <Stack.Navigator screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="Home" component={HomeScreen} />
                 <Stack.Screen name="Results" component={ResultsScreen} />
+                <Stack.Screen name="Detail" component={DetailScreen} />
                 <Stack.Screen name="Bucket" component={BucketScreen} />
                 <Stack.Screen name="Settings" component={SettingsScreen} />
                 <Stack.Screen name="Auth" component={AuthScreen} />
