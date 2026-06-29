@@ -502,15 +502,46 @@ async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
   try {
     const candidates = await searchOpenFoodFactsProducts(query, 3, timeoutMs);
     const details = candidates[0];
-    if (!isUsableProductCandidate(details)) return null;
-    setCachedProductDetails(cacheKey, details);
-    return details;
+    if (isUsableProductCandidate(details)) {
+      setCachedProductDetails(cacheKey, details);
+      return details;
+    }
+    const relaxedDetails = await fetchRelaxedProductDetails(query, timeoutMs);
+    if (relaxedDetails) {
+      setCachedProductDetails(cacheKey, relaxedDetails);
+      return relaxedDetails;
+    }
+    return null;
   } catch (err) {
     if (err.message !== 'timeout') {
       console.error('product details fetch error:', err.message);
     }
     return null;
   }
+}
+
+async function fetchRelaxedProductDetails(query, timeoutMs) {
+  const terms = buildOpenFoodFactsTerms(query);
+  const hint = getPriceHint(query);
+  if (hint.name) terms.push(hint.name);
+  const deadline = Date.now() + timeoutMs;
+
+  for (const term of [...new Set(terms.map(cleanText).filter(Boolean))]) {
+    if (Date.now() >= deadline) break;
+    try {
+      const data = await fetchOpenFoodFactsSearch(term, 8, Math.max(300, deadline - Date.now()));
+      for (const product of data.products ?? []) {
+        const details = mapOpenFoodFactsProduct(product, term);
+        if (isUsableProductCandidate(details)) return details;
+      }
+    } catch (err) {
+      if (err.message !== 'timeout') {
+        console.error('relaxed product details fetch error:', err.message);
+      }
+    }
+  }
+
+  return null;
 }
 
 function buildCatalogResults({ searchQuery, productCandidates }) {
@@ -922,11 +953,15 @@ app.post('/api/results', async (req, res) => {
       return [];
     }),
     searchOpenFoodFactsProducts(searchQuery, 12, 4500),
-  ]).then(([pricedItems, productCandidates]) => {
+  ]).then(async ([pricedItems, productCandidates]) => {
     const pricedDetailQueries = new Set(pricedItems.map(item => normalizeCachePart(item.detailQuery)));
     const catalogItems = buildCatalogResults({ searchQuery, productCandidates })
       .filter(item => !pricedDetailQueries.has(normalizeCachePart(item.detailQuery)));
-    const items = [...pricedItems, ...catalogItems].slice(0, 20);
+    let items = [...pricedItems, ...catalogItems].slice(0, 20);
+    if (items.length === 0) {
+      const details = await fetchProductDetails(searchQuery, 3500);
+      items = buildCatalogResults({ searchQuery, productCandidates: details ? [details] : [] });
+    }
     if (items.length > 0) {
       setCachedResults(cacheKey, items);
     }
