@@ -97,11 +97,10 @@ export default function BucketScreen() {
     function openGoogleMaps() {
       const appUrl = `comgooglemaps://?saddr=${saddrCoord}&daddr=${encoded.join('+to:')}&directionsmode=driving`;
       const webUrl = `https://www.google.com/maps/dir/${saddrCoord || 'My+Location'}/${encoded.join('/')}/`;
-      Linking.canOpenURL(appUrl).then((supported) => {
-        Linking.openURL(supported ? appUrl : webUrl).catch(() =>
-          Alert.alert('Could not open Google Maps'),
-        );
-      });
+      Linking.canOpenURL(appUrl)
+        .then((supported) => Linking.openURL(supported ? appUrl : webUrl))
+        .catch(() => Linking.openURL(webUrl))
+        .catch(() => Alert.alert('Could not open Google Maps'));
     }
 
     function openAppleMaps() {
