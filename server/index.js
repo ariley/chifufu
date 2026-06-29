@@ -11,7 +11,7 @@ app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const RESULTS_CACHE_VERSION = 'products-v4-real-labels';
+const RESULTS_CACHE_VERSION = 'products-v5-no-ai-refresh';
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
 const PRODUCT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const resultsCache = new Map();
@@ -736,22 +736,7 @@ function buildInstantResults({ location, category, searchQuery, places, productC
 }
 
 function refreshResultsInBackground(cacheKey, args) {
-  if (!ANTHROPIC_API_KEY || backgroundRefreshes.has(cacheKey)) return;
-
-  const refresh = generateResults(args)
-    .then(items => {
-      if (Array.isArray(items) && items.length > 0) {
-        setCachedResults(cacheKey, items);
-      }
-    })
-    .catch(err => {
-      console.error('background results refresh error:', err.message);
-    })
-    .finally(() => {
-      backgroundRefreshes.delete(cacheKey);
-    });
-
-  backgroundRefreshes.set(cacheKey, refresh);
+  return;
 }
 
 // ── Haversine distance in km ───────────────────────────────────
