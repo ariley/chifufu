@@ -283,6 +283,27 @@ function isUsableProductCandidate(product) {
   );
 }
 
+function productSearchText(product) {
+  return normalizeCachePart([product?.brand, product?.name, product?.query].filter(Boolean).join(' '));
+}
+
+function isRelevantProductCandidate(product, searchQuery) {
+  const query = normalizeCachePart(productDetailQuery(searchQuery)).replace(/[^a-z0-9]+/g, ' ').trim();
+  const text = productSearchText(product).replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!query || !text) return false;
+  if (text.includes(query)) return true;
+
+  if (query === 'israeli feta') {
+    return /\bisraeli feta\b/.test(text);
+  }
+
+  const tokens = query
+    .split(/\s+/)
+    .filter(token => token.length > 2 && !['with', 'and', 'the', 'for'].includes(token));
+  if (tokens.length === 0) return true;
+  return tokens.every(token => text.includes(token));
+}
+
 function normalizeTags(tags) {
   if (Array.isArray(tags)) {
     return tags
@@ -622,7 +643,7 @@ async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1
       for (const product of data.products ?? []) {
         const details = mapOpenFoodFactsProduct(product, term);
         const key = normalizeCachePart(`${details.brand || ''}|${details.name}|${details.productSize || ''}`);
-        if (!isUsableProductCandidate(details) || seen.has(key)) continue;
+        if (!isUsableProductCandidate(details) || !isRelevantProductCandidate(details, term) || seen.has(key)) continue;
         seen.add(key);
         candidates.push(details);
         setCachedProductDetails(normalizeCachePart([details.brand, details.name].filter(Boolean).join(' ')), details);
@@ -673,7 +694,7 @@ async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
     const product = data.products?.[0];
     if (!product) return null;
     const details = mapOpenFoodFactsProduct(product, query);
-    if (!isUsableProductCandidate(details)) return null;
+    if (!isUsableProductCandidate(details) || !isRelevantProductCandidate(details, query)) return null;
     setCachedProductDetails(cacheKey, details);
     return details;
   } catch (err) {

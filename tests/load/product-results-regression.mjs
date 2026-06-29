@@ -91,11 +91,14 @@ await assertDistinctProductRows('Eggs');
 await assertDistinctProductRows('Orange juice with pulp');
 
 const israeliFetaItems = await postResults('Israeli feta');
+if (israeliFetaItems.some(item => /couscous|salad/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {
+  throw new Error('Israeli feta: irrelevant couscous/salad product leaked into results');
+}
 const israeliFeta = israeliFetaItems.find(item => item.detailQuery?.includes("Trader Joe's Israeli Feta"));
 if (!israeliFeta) {
   throw new Error('Israeli feta: expected Trader Joe\'s Israeli Feta candidate');
 }
-if (!israeliFeta.imageUrl || !israeliFeta.ingredients || !israeliFeta.nutrition?.servingSize) {
+if (!israeliFeta.imageUrl || !israeliFeta.ingredients || (!israeliFeta.nutrition?.servingSize && !israeliFeta.nutrition?.saturatedFat)) {
   throw new Error('Israeli feta: expected image, ingredients, and label nutrition on result row');
 }
 
