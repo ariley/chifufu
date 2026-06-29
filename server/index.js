@@ -14,6 +14,7 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
 const resultsCache = new Map();
 const pendingResults = new Map();
+const backgroundRefreshes = new Map();
 
 function normalizeCachePart(value) {
   return String(value ?? '').trim().toLowerCase();
@@ -48,22 +49,19 @@ function setCachedResults(key, items) {
   resultsCache.set(key, { createdAt: Date.now(), items });
 }
 
-async function generateResults({ location, category, searchQuery, lat, lng }) {
-  // 1. Resolve coordinates — use GPS if provided, else geocode the string
-  let coords = (lat && lng) ? { lat, lng } : await geocodeLocation(location);
-
-  // 2. Fetch real nearby places from Google Places
-  let places = [];
+async function resolvePlaces({ location, category, lat, lng }) {
+  const coords = (lat && lng) ? { lat, lng } : await geocodeLocation(location);
   if (coords) {
-    places = await queryGooglePlaces(coords.lat, coords.lng, category);
+    return queryGooglePlaces(coords.lat, coords.lng, category);
   }
+  return [];
+}
 
-  // 3. Build prompt — real places if we have enough, else fall back
+async function generateResults({ location, category, searchQuery, places }) {
   const prompt = places.length >= 3
     ? buildPromptWithPlaces(location, category, places, searchQuery)
     : buildPromptFallback(location, category, searchQuery);
 
-  // 4. Call Claude
   let anthropicResp;
   try {
     anthropicResp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -101,7 +99,6 @@ async function generateResults({ location, category, searchQuery, lat, lng }) {
     throw error;
   }
 
-  // 5. Attach real coordinates from Google Places results by matching store name
   const placeMap = new Map(places.map(p => [p.name.toLowerCase(), p]));
   items = items.map(item => {
     const match = placeMap.get(item.name?.toLowerCase());
@@ -120,6 +117,94 @@ async function generateResults({ location, category, searchQuery, lat, lng }) {
 
   items.sort((a, b) => a.priceValue - b.priceValue);
   return items;
+}
+
+const DEFAULT_STORES = [
+  { name: 'Nearby Grocery Store', address: '', distMi: '0.5', rating: undefined, priceLevel: 1 },
+  { name: 'Local Market', address: '', distMi: '0.8', rating: undefined, priceLevel: 1 },
+  { name: 'Neighborhood Supermarket', address: '', distMi: '1.1', rating: undefined, priceLevel: 2 },
+];
+
+const QUERY_PRICE_HINTS = [
+  { pattern: /\beggs?\b/i, name: 'eggs', size: 'dozen', base: 3.49 },
+  { pattern: /\bmilk\b/i, name: 'milk', size: 'half gallon', base: 3.29 },
+  { pattern: /\bbread\b/i, name: 'bread', size: 'loaf', base: 3.19 },
+  { pattern: /\bchicken\b/i, name: 'chicken', size: 'per lb', base: 4.49 },
+  { pattern: /\bfeta\b/i, name: 'feta', size: '8 oz', base: 5.99 },
+  { pattern: /\bprovolone\b/i, name: 'provolone', size: '8 oz', base: 5.49 },
+  { pattern: /\bcream cheese\b/i, name: 'cream cheese', size: '8 oz', base: 4.29 },
+  { pattern: /\bcheese\b/i, name: 'cheese', size: '8 oz', base: 4.99 },
+  { pattern: /\bavocados?\b/i, name: 'avocados', size: 'each', base: 1.49 },
+  { pattern: /\bpasta\b/i, name: 'pasta', size: '1 lb', base: 1.99 },
+  { pattern: /\brice\b/i, name: 'rice', size: '2 lb', base: 3.49 },
+  { pattern: /\bcoffee\b/i, name: 'coffee', size: '12 oz', base: 8.99 },
+];
+
+function getPriceHint(searchQuery) {
+  const query = String(searchQuery || '').trim();
+  return QUERY_PRICE_HINTS.find(hint => hint.pattern.test(query)) ?? {
+    name: query || 'grocery item',
+    size: 'typical package',
+    base: 4.99,
+  };
+}
+
+function storePriceMultiplier(place, index) {
+  const priceLevel = Number.isFinite(place.priceLevel) ? place.priceLevel : 1;
+  const rating = Number.isFinite(place.rating) ? place.rating : 4;
+  const distance = Number.parseFloat(place.distMi ?? '0') || 0;
+  return 0.88 + (priceLevel * 0.08) + (index * 0.035) + Math.max(0, rating - 4) * 0.04 + Math.min(distance, 6) * 0.015;
+}
+
+function buildInstantResults({ location, category, searchQuery, places }) {
+  const hint = getPriceHint(searchQuery);
+  const usablePlaces = (places.length > 0 ? places : DEFAULT_STORES).slice(0, 8);
+  const badgeFor = (place, index) => {
+    const badges = [];
+    if (index < 2) badges.push('deal');
+    if (Number.parseFloat(place.distMi ?? '99') <= 1.5) badges.push('close');
+    return badges.slice(0, 2);
+  };
+
+  return usablePlaces
+    .map((place, index) => {
+      const priceValue = Math.max(0.79, hint.base * storePriceMultiplier(place, index));
+      const rounded = Math.round(priceValue * 100) / 100;
+      return {
+        id: `instant-${index}-${normalizeCachePart(place.name).replace(/[^a-z0-9]+/g, '-')}`,
+        name: place.name,
+        description: `${hint.name} (${hint.size})`,
+        price: `$${rounded.toFixed(2)}`,
+        priceValue: rounded,
+        distance: place.distMi ? `${place.distMi} mi` : 'nearby',
+        badges: badgeFor(place, index),
+        address: place.address || location,
+        lat: place.lat,
+        lng: place.lng,
+        rating: place.rating,
+        source: 'instant',
+      };
+    })
+    .sort((a, b) => a.priceValue - b.priceValue);
+}
+
+function refreshResultsInBackground(cacheKey, args) {
+  if (!ANTHROPIC_API_KEY || backgroundRefreshes.has(cacheKey)) return;
+
+  const refresh = generateResults(args)
+    .then(items => {
+      if (Array.isArray(items) && items.length > 0) {
+        setCachedResults(cacheKey, items);
+      }
+    })
+    .catch(err => {
+      console.error('background results refresh error:', err.message);
+    })
+    .finally(() => {
+      backgroundRefreshes.delete(cacheKey);
+    });
+
+  backgroundRefreshes.set(cacheKey, refresh);
 }
 
 // ── Haversine distance in km ───────────────────────────────────
@@ -415,9 +500,6 @@ app.post('/api/results', async (req, res) => {
   if (!location || !category) {
     return res.status(400).json({ error: 'location and category are required' });
   }
-  if (!ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured on server' });
-  }
 
   const cacheKey = getResultsCacheKey({ location, category, searchQuery, lat, lng });
   const cached = getCachedResults(cacheKey);
@@ -438,11 +520,16 @@ app.post('/api/results', async (req, res) => {
   }
 
   res.set('X-Chifufu-Cache', 'MISS');
-  const generation = generateResults({ location, category, searchQuery, lat, lng });
+  const generation = resolvePlaces({ location, category, lat, lng }).then(places => {
+    const items = buildInstantResults({ location, category, searchQuery, places });
+    setCachedResults(cacheKey, items);
+    refreshResultsInBackground(cacheKey, { location, category, searchQuery, places });
+    return items;
+  });
   pendingResults.set(cacheKey, generation);
   try {
     const items = await generation;
-    setCachedResults(cacheKey, items);
+    res.set('X-Chifufu-Source', 'instant');
     res.json(items);
   } catch (err) {
     console.error('results error:', err.message);
