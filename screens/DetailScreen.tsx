@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
-  Linking,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -25,7 +24,7 @@ export default function DetailScreen() {
   const { item } = route.params;
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
-  const { bg, bgSec, text, textSec, textTer, border, accent, accentLight } = useThemeContext();
+  const { bg, bgSec, text, textSec, textTer, border, accent } = useThemeContext();
 
   const [details, setDetails] = useState<ProductDetails | null>(() => ({
     query: item.detailQuery || item.name,
@@ -74,11 +73,25 @@ export default function DetailScreen() {
     ['Calories', details?.nutrition?.calories || details?.calories],
     ['Serving', details?.nutrition?.servingSize],
     ['Fat', details?.nutrition?.fat],
+    ['Saturated fat', details?.nutrition?.saturatedFat],
+    ['Trans fat', details?.nutrition?.transFat],
+    ['Cholesterol', details?.nutrition?.cholesterol],
     ['Carbs', details?.nutrition?.carbs],
     ['Sugars', details?.nutrition?.sugars],
+    ['Fiber', details?.nutrition?.fiber],
     ['Protein', details?.nutrition?.protein],
     ['Sodium', details?.nutrition?.sodium],
+    ['Calcium', details?.nutrition?.calcium],
+    ['Iron', details?.nutrition?.iron],
+    ['Potassium', details?.nutrition?.potassium],
     ['Nutri-Score', details?.nutrition?.nutriScore?.toUpperCase()],
+  ].filter(([, value]) => !!value);
+
+  const labelRows = [
+    ['Package', details?.productSize],
+    ['Allergens', details?.allergens?.join(', ')],
+    ['Labels', details?.labels?.join(', ')],
+    ['Source', details?.source],
   ].filter(([, value]) => !!value);
 
   return (
@@ -151,14 +164,18 @@ export default function DetailScreen() {
           </Text>
         </View>
 
-        {details?.productUrl ? (
-          <TouchableOpacity
-            style={[styles.sourceBtn, { backgroundColor: accent }]}
-            onPress={() => Linking.openURL(details.productUrl!)}
-            accessibilityRole="button"
-          >
-            <Text style={[styles.sourceBtnText, { color: accentLight }]}>Open product source</Text>
-          </TouchableOpacity>
+        {labelRows.length > 0 ? (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: text }]}>Label</Text>
+            <View style={[styles.labelCard, { borderColor: border, backgroundColor: bgSec }]}>
+              {labelRows.map(([label, value]) => (
+                <View key={label} style={[styles.labelRow, { borderBottomColor: border }]}>
+                  <Text style={[styles.labelName, { color: textSec }]}>{label}</Text>
+                  <Text style={[styles.labelValue, { color: text }]}>{value}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
         ) : null}
       </ScrollView>
     </SafeAreaView>
@@ -224,12 +241,14 @@ const styles = StyleSheet.create({
   nutritionValue: { fontSize: 14, fontWeight: '600', flexShrink: 1, textAlign: 'right' },
   emptyText: { fontSize: 14 },
   ingredients: { fontSize: 14, lineHeight: 21 },
-  sourceBtn: {
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 15,
-    marginTop: 26,
+  labelCard: { borderWidth: 0.5, borderRadius: 12, overflow: 'hidden' },
+  labelRow: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
   },
-  sourceBtnText: { fontSize: 15, fontWeight: '600' },
+  labelName: { width: 86, fontSize: 14 },
+  labelValue: { flex: 1, fontSize: 14, fontWeight: '600', lineHeight: 19 },
 });

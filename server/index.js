@@ -11,7 +11,7 @@ app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const RESULTS_CACHE_VERSION = 'products-v2';
+const RESULTS_CACHE_VERSION = 'products-v3-labels';
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
 const PRODUCT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const resultsCache = new Map();
@@ -221,10 +221,17 @@ function mapOpenFoodFactsProduct(product, query) {
   const nutrition = {
     calories,
     fat: nutrientValue(nutriments, 'fat_serving', ' g') ?? nutrientValue(nutriments, 'fat_100g', ' g / 100g'),
+    saturatedFat: nutrientValue(nutriments, 'saturated-fat_serving', ' g') ?? nutrientValue(nutriments, 'saturated-fat_100g', ' g / 100g'),
+    transFat: nutrientValue(nutriments, 'trans-fat_serving', ' g') ?? nutrientValue(nutriments, 'trans-fat_100g', ' g / 100g'),
+    cholesterol: nutrientValue(nutriments, 'cholesterol_serving', ' mg') ?? nutrientValue(nutriments, 'cholesterol_100g', ' mg / 100g'),
     carbs: nutrientValue(nutriments, 'carbohydrates_serving', ' g') ?? nutrientValue(nutriments, 'carbohydrates_100g', ' g / 100g'),
     sugars: nutrientValue(nutriments, 'sugars_serving', ' g') ?? nutrientValue(nutriments, 'sugars_100g', ' g / 100g'),
+    fiber: nutrientValue(nutriments, 'fiber_serving', ' g') ?? nutrientValue(nutriments, 'fiber_100g', ' g / 100g'),
     protein: nutrientValue(nutriments, 'proteins_serving', ' g') ?? nutrientValue(nutriments, 'proteins_100g', ' g / 100g'),
     sodium: nutrientValue(nutriments, 'sodium_serving', ' mg') ?? nutrientValue(nutriments, 'sodium_100g', ' mg / 100g'),
+    calcium: nutrientValue(nutriments, 'calcium_serving', ' mg') ?? nutrientValue(nutriments, 'calcium_100g', ' mg / 100g'),
+    iron: nutrientValue(nutriments, 'iron_serving', ' mg') ?? nutrientValue(nutriments, 'iron_100g', ' mg / 100g'),
+    potassium: nutrientValue(nutriments, 'potassium_serving', ' mg') ?? nutrientValue(nutriments, 'potassium_100g', ' mg / 100g'),
     servingSize: product?.serving_size || undefined,
     nutriScore: product?.nutriscore_grade ?? null,
   };
@@ -300,6 +307,38 @@ const CURATED_PRODUCT_CANDIDATES = [
         },
         productUrl: 'https://www.tine.com/products/tine-cream-cheese/cream-cheese-natural',
         source: 'TINE',
+      },
+    ],
+  },
+  {
+    patterns: [/israeli feta/i, /feta cheese in brine/i],
+    products: [
+      {
+        query: "Trader Joe's Israeli Feta Cheese in Brine",
+        name: 'Israeli Feta Cheese in Brine',
+        brand: "Trader Joe's",
+        productSize: '6 oz',
+        imageUrl: 'https://fig-product-images.s3.amazonaws.com/00630825.webp',
+        ingredients: "Pasteurized sheep's milk, sea salt, microbial rennet, lactic cultures.",
+        calories: '60 kcal',
+        nutrition: {
+          calories: '60 kcal',
+          fat: '4.5 g',
+          saturatedFat: '3 g',
+          transFat: '0 g',
+          cholesterol: '15 mg',
+          sodium: '320 mg',
+          carbs: '1 g',
+          sugars: '0 g',
+          protein: '5 g',
+          calcium: '60 mg',
+          iron: '0.1 mg',
+          servingSize: '1 oz',
+        },
+        allergens: ['milk'],
+        labels: ['vegetarian'],
+        productUrl: 'https://foodisgood.com/product/trader-joes-israeli-feta-in-brine/',
+        source: 'Fig / product label',
       },
     ],
   },

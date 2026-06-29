@@ -29,8 +29,15 @@ export interface ProductNutrition {
   fat?: string;
   carbs?: string;
   sugars?: string;
+  fiber?: string;
   protein?: string;
+  saturatedFat?: string;
+  transFat?: string;
+  cholesterol?: string;
   sodium?: string;
+  calcium?: string;
+  iron?: string;
+  potassium?: string;
   servingSize?: string;
   nutriScore?: string | null;
 }

@@ -21,6 +21,15 @@ async function postResults(searchQuery) {
   return response.json();
 }
 
+async function getDetails(query) {
+  const response = await fetch(`${API}/api/product/details?q=${encodeURIComponent(query)}`);
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`details failed ${response.status}: ${body}`);
+  }
+  return response.json();
+}
+
 function uniqueCount(items, pick) {
   return new Set(items.map(pick).filter(Boolean)).size;
 }
@@ -60,3 +69,25 @@ async function assertDistinctProductRows(searchQuery) {
 }
 
 await assertDistinctProductRows('Norwegian cream cheese');
+
+const israeliFetaItems = await postResults('Israeli feta');
+const israeliFeta = israeliFetaItems.find(item => item.detailQuery?.includes("Trader Joe's Israeli Feta"));
+if (!israeliFeta) {
+  throw new Error('Israeli feta: expected Trader Joe\'s Israeli Feta candidate');
+}
+if (!israeliFeta.imageUrl || !israeliFeta.ingredients || !israeliFeta.nutrition?.servingSize) {
+  throw new Error('Israeli feta: expected image, ingredients, and label nutrition on result row');
+}
+
+const israeliFetaDetails = await getDetails(israeliFeta.detailQuery);
+if (!israeliFetaDetails.imageUrl || !israeliFetaDetails.ingredients || !israeliFetaDetails.nutrition?.saturatedFat) {
+  throw new Error('Israeli feta: expected image, ingredients, and expanded label details');
+}
+
+console.log(JSON.stringify({
+  searchQuery: 'Israeli feta',
+  product: [israeliFeta.brand, israeliFeta.description].filter(Boolean).join(' '),
+  hasImage: Boolean(israeliFeta.imageUrl),
+  ingredients: israeliFetaDetails.ingredients,
+  nutritionKeys: Object.keys(israeliFetaDetails.nutrition ?? {}),
+}, null, 2));
