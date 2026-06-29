@@ -1,10 +1,23 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Link from "next/link";
+import Image from "next/image";
 
 export const metadata: Metadata = {
-  title: "Chifufu — Cheap Food Finder",
-  description: "Find the cheapest food options near you — groceries, delivery, dining out, and more.",
+  metadataBase: new URL("https://chifufu.com"),
+  title: "Chifufu - Cheap food decisions, made easier",
+  description:
+    "A simple upcoming app for comparing nearby groceries, takeout, and everyday food stops before you spend.",
+  icons: {
+    icon: "/chifufu-icon.png",
+    apple: "/chifufu-icon.png",
+  },
+  openGraph: {
+    title: "Chifufu - Cheap food decisions, made easier",
+    description:
+      "A simple upcoming app for comparing nearby groceries, takeout, and everyday food stops before you spend.",
+    images: ["/chifufu-icon.png"],
+  },
 };
 
 export default function RootLayout({
@@ -14,31 +27,33 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-white dark:bg-black">
-        {/* Top nav */}
-        <nav className="sticky top-0 z-50 border-b border-[#E5E5EA] dark:border-[#38383A] bg-white/90 dark:bg-black/90 backdrop-blur-sm">
-          <div className="max-w-[640px] mx-auto px-6 h-12 flex items-center justify-between">
+      <body className="min-h-screen bg-[#fbfaf6] text-[#193126]">
+        <nav className="sticky top-0 z-50 border-b border-[#dfe9df] bg-[#fbfaf6]/90 backdrop-blur-sm">
+          <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
             <Link
               href="/"
-              className="text-[#1D9E75] text-sm font-semibold tracking-widest"
+              className="flex items-center gap-3 text-sm font-semibold tracking-widest text-[#1D9E75]"
             >
+              <Image
+                src="/chifufu-icon.png"
+                alt=""
+                width={28}
+                height={28}
+                className="rounded-md"
+                priority
+              />
               CHIFUFU
             </Link>
             <a
-              href="https://apps.apple.com/app/chifufu"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-[13px] text-[#6C6C70] dark:text-[#ABABAB] hover:text-[#1D9E75] transition-colors"
+              href="#early-access"
+              className="rounded-lg border border-[#b7d8c0] bg-white px-4 py-2 text-sm font-semibold text-[#193126] transition hover:border-[#1D9E75]"
             >
-              Get the app →
+              Early access
             </a>
           </div>
         </nav>
 
-        {/* Page content */}
-        <main className="max-w-[640px] mx-auto w-full">
-          {children}
-        </main>
+        <main>{children}</main>
       </body>
     </html>
   );
