@@ -45,7 +45,9 @@ router.post('/register', async (req, res) => {
       },
     });
 
-    await sendVerificationEmail(user.email, token);
+    sendVerificationEmail(user.email, token).catch((emailErr) => {
+      console.error('verification email error:', emailErr);
+    });
 
     return res.status(201).json({ message: 'Verification email sent' });
   } catch (err) {
@@ -90,6 +92,48 @@ router.post('/login', async (req, res) => {
     });
   } catch (err) {
     console.error('login error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/auth/resend-verification
+router.post('/resend-verification', async (req, res) => {
+  try {
+    const { email } = req.body ?? {};
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ error: 'Email is required' });
+    }
+
+    const normalizedEmail = email.toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
+
+    if (!user || user.emailVerified) {
+      return res.json({ message: 'If this account needs verification, a new link has been sent' });
+    }
+
+    await prisma.verificationToken.deleteMany({
+      where: { identifier: user.email, type: 'email_verification' },
+    });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await prisma.verificationToken.create({
+      data: {
+        identifier: user.email,
+        token,
+        type: 'email_verification',
+        expires,
+      },
+    });
+
+    sendVerificationEmail(user.email, token).catch((emailErr) => {
+      console.error('verification resend email error:', emailErr);
+    });
+
+    return res.json({ message: 'If this account needs verification, a new link has been sent' });
+  } catch (err) {
+    console.error('resend-verification error:', err);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -145,6 +189,52 @@ h2{color:#1D9E75}
     console.error('verify-email error:', err);
     return res.status(500).send(errorPage('Something went wrong. Please try again.'));
   }
+});
+
+// GET /api/auth/reset-password?token=TOKEN
+router.get('/reset-password', async (req, res) => {
+  const { token } = req.query;
+  const escapedToken = String(token ?? '').replace(/"/g, '&quot;');
+
+  return res.send(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reset password — Chifufu</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:40px 24px;color:#222;background:#f7f7f7}
+.card{max-width:420px;margin:0 auto;background:#fff;border-radius:14px;padding:24px;box-shadow:0 2px 16px rgba(0,0,0,.08)}
+h1{font-size:24px;margin:0 0 8px}
+p{color:#666;line-height:1.4}
+input{box-sizing:border-box;width:100%;font-size:16px;padding:14px;border:1px solid #ddd;border-radius:10px;margin:12px 0}
+button{width:100%;border:0;border-radius:10px;background:#1D9E75;color:#fff;font-size:16px;font-weight:600;padding:14px;margin-top:8px}
+.msg{margin-top:14px;font-size:14px}
+</style></head>
+<body><div class="card">
+<h1>Reset password</h1>
+<p>Enter a new password for your Chifufu account.</p>
+<form id="form">
+<input type="hidden" id="token" value="${escapedToken}">
+<input id="password" type="password" autocomplete="new-password" placeholder="New password" minlength="8" required>
+<button type="submit">Reset Password</button>
+</form>
+<div id="msg" class="msg"></div>
+</div>
+<script>
+document.getElementById('form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const msg = document.getElementById('msg');
+  msg.textContent = 'Saving...';
+  const response = await fetch('/api/auth/reset-password', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      token: document.getElementById('token').value,
+      password: document.getElementById('password').value
+    })
+  });
+  const body = await response.json().catch(() => ({}));
+  msg.textContent = response.ok ? 'Password reset. You can sign in now.' : (body.error || 'Could not reset password.');
+});
+</script></body></html>`);
 });
 
 // POST /api/auth/forgot-password

@@ -4,6 +4,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -11,13 +12,14 @@ import {
   useColorScheme,
   View,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { useAuth } from '../contexts/AuthContext';
 import { RootStackParamList } from '../types';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Auth'>;
+type Route = RouteProp<RootStackParamList, 'Auth'>;
 
 const GREEN = '#1D9E75';
 const GREEN_LIGHT = '#E1F5EE';
@@ -25,16 +27,18 @@ const RED = '#E53935';
 
 export default function AuthScreen() {
   const navigation = useNavigation<Nav>();
+  const route = useRoute<Route>();
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
-  const { signIn, signUp } = useAuth();
+  const { forgotPassword, resendVerification, signIn, signUp } = useAuth();
 
-  const [tab, setTab] = useState<'signin' | 'signup'>('signin');
-  const [email, setEmail] = useState('');
+  const [tab, setTab] = useState<'signin' | 'signup'>(route.params?.verified ? 'signin' : 'signin');
+  const [email, setEmail] = useState(route.params?.email ?? '');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [verifyMessage, setVerifyMessage] = useState(false);
+  const [message, setMessage] = useState(route.params?.verified ? 'Email verified. Sign in to continue.' : '');
+  const [needsVerification, setNeedsVerification] = useState(false);
 
   const c = {
     bg: dark ? '#000000' : '#FFFFFF',
@@ -47,7 +51,8 @@ export default function AuthScreen() {
 
   function resetForm() {
     setError('');
-    setVerifyMessage(false);
+    setMessage('');
+    setNeedsVerification(false);
   }
 
   function switchTab(next: 'signin' | 'signup') {
@@ -66,13 +71,15 @@ export default function AuthScreen() {
 
     setLoading(true);
     setError('');
-    setVerifyMessage(false);
+    setMessage('');
+    setNeedsVerification(false);
 
     if (tab === 'signin') {
       const { error: authError } = await signIn(trimmedEmail, trimmedPassword);
       setLoading(false);
       if (authError) {
         setError(authError);
+        setNeedsVerification(authError.toLowerCase().includes('verify'));
       } else {
         navigation.navigate('Home');
       }
@@ -82,8 +89,48 @@ export default function AuthScreen() {
       if (authError) {
         setError(authError);
       } else {
-        setVerifyMessage(true);
+        setPassword('');
+        setTab('signin');
+        setNeedsVerification(true);
+        setMessage('Account created. Check your email to verify it, then sign in.');
       }
+    }
+  }
+
+  async function handleResendVerification() {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError('Enter your email first.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    const { error: authError } = await resendVerification(trimmedEmail);
+    setLoading(false);
+    if (authError) {
+      setError(authError);
+    } else {
+      setNeedsVerification(true);
+      setMessage('If this account needs verification, a new link has been sent.');
+    }
+  }
+
+  async function handleForgotPassword() {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setError('Enter your email first.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+    const { error: authError } = await forgotPassword(trimmedEmail);
+    setLoading(false);
+    if (authError) {
+      setError(authError);
+    } else {
+      setMessage('If that email exists, a password reset link has been sent.');
     }
   }
 
@@ -94,7 +141,11 @@ export default function AuthScreen() {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <View style={styles.container}>
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => navigation.goBack()}
@@ -133,12 +184,10 @@ export default function AuthScreen() {
             </TouchableOpacity>
           </View>
 
-          {verifyMessage && (
+          {!!message && (
             <View style={styles.verifyBox}>
               <Text style={styles.verifyIcon}>✉️</Text>
-              <Text style={styles.verifyText}>
-                Check your email to verify your account, then sign in.
-              </Text>
+              <Text style={styles.verifyText}>{message}</Text>
             </View>
           )}
 
@@ -188,13 +237,34 @@ export default function AuthScreen() {
             )}
           </TouchableOpacity>
 
+          {tab === 'signin' && (
+            <View style={styles.linkRow}>
+              <TouchableOpacity
+                onPress={handleForgotPassword}
+                disabled={loading}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.linkText, { color: c.textSec }]}>Forgot password?</Text>
+              </TouchableOpacity>
+              {needsVerification && (
+                <TouchableOpacity
+                  onPress={handleResendVerification}
+                  disabled={loading}
+                  accessibilityRole="button"
+                >
+                  <Text style={[styles.linkText, { color: GREEN }]}>Resend verification</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           <TouchableOpacity
             style={styles.guestBtn}
             onPress={() => navigation.navigate('Home')}
           >
             <Text style={[styles.guestText, { color: c.textSec }]}>Continue as guest</Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -203,7 +273,7 @@ export default function AuthScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   flex: { flex: 1 },
-  container: { flex: 1, paddingHorizontal: 24, paddingTop: 16 },
+  container: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 16, paddingBottom: 28 },
   backBtn: { marginBottom: 8, alignSelf: 'flex-start' },
   backChevron: { fontSize: 36, lineHeight: 40, fontWeight: '300' },
   appLabel: { fontSize: 12, fontWeight: '500', letterSpacing: 1, marginBottom: 8 },
@@ -246,6 +316,14 @@ const styles = StyleSheet.create({
   },
   btnDisabled: { opacity: 0.6 },
   btnText: { color: GREEN_LIGHT, fontSize: 16, fontWeight: '500' },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 8,
+  },
+  linkText: { fontSize: 13, fontWeight: '500' },
   guestBtn: { alignItems: 'center', paddingVertical: 12 },
   guestText: { fontSize: 14 },
 });

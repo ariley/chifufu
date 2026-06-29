@@ -31,6 +31,24 @@ export async function apiRegister(email: string, password: string, name?: string
   return res.json();
 }
 
+export async function apiResendVerification(email: string): Promise<{ error?: string; message?: string }> {
+  const res = await fetch(`${BASE_URL}/api/auth/resend-verification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  return res.json();
+}
+
+export async function apiForgotPassword(email: string): Promise<{ error?: string; message?: string }> {
+  const res = await fetch(`${BASE_URL}/api/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+  return res.json();
+}
+
 export async function apiLogin(email: string, password: string): Promise<{ token?: string; user?: AuthUser; error?: string }> {
   const res = await fetch(`${BASE_URL}/api/auth/login`, {
     method: 'POST',

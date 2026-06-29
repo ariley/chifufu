@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef } from 'react';
 import { Alert } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import HomeScreen from './screens/HomeScreen';
@@ -17,6 +17,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 // ── Saved context ──────────────────────────────────────────────
 interface SavedContextValue {
@@ -69,6 +70,7 @@ export default function App() {
   // Keep a ref so the link handler always sees the latest replaceAll
   const replaceAllRef = useRef(bucketState.replaceAll);
   replaceAllRef.current = bucketState.replaceAll;
+  const pendingVerifiedAuthRef = useRef(false);
 
   useEffect(() => {
     function handleURL(url: string | null) {
@@ -76,7 +78,16 @@ export default function App() {
       try {
         const parsed = Linking.parse(url);
         const code = parsed.queryParams?.code as string | undefined;
-        if (parsed.hostname === 'cart' && code) {
+        const path = [parsed.hostname, parsed.path].filter(Boolean).join('/');
+        if (path === 'auth/verified') {
+          if (navigationRef.isReady()) {
+            navigationRef.navigate('Auth', { verified: true });
+          } else {
+            pendingVerifiedAuthRef.current = true;
+          }
+          return;
+        }
+        if ((parsed.hostname === 'cart' || path === 'cart') && code) {
           void importSharedCart(code);
         }
       } catch (_) {}
@@ -105,7 +116,15 @@ export default function App() {
       <SavedContext.Provider value={savedState}>
         <SavedRoutesContext.Provider value={savedRoutesState}>
           <BucketContext.Provider value={bucketState}>
-            <NavigationContainer>
+            <NavigationContainer
+              ref={navigationRef}
+              onReady={() => {
+                if (pendingVerifiedAuthRef.current) {
+                  pendingVerifiedAuthRef.current = false;
+                  navigationRef.navigate('Auth', { verified: true });
+                }
+              }}
+            >
               <Stack.Navigator screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="Home" component={HomeScreen} />
                 <Stack.Screen name="Results" component={ResultsScreen} />

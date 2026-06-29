@@ -38,6 +38,6 @@ export type RootStackParamList = {
   Results: { query: string; lat?: number; lng?: number; locationLabel?: string };
   Bucket: undefined;
   Settings: undefined;
-  Auth: undefined;
+  Auth: { verified?: boolean; email?: string } | undefined;
   Profile: undefined;
 };

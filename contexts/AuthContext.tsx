@@ -1,9 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   AuthUser,
+  apiForgotPassword,
   apiGetMe,
   apiLogin,
   apiRegister,
+  apiResendVerification,
   clearToken,
   getStoredToken,
   storeToken,
@@ -15,6 +17,8 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string) => Promise<{ error: string | null; needsVerification?: boolean }>;
+  resendVerification: (email: string) => Promise<{ error: string | null }>;
+  forgotPassword: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
 }
 
@@ -24,6 +28,8 @@ const AuthContext = createContext<AuthContextValue>({
   isAuthenticated: false,
   signIn: async () => ({ error: null }),
   signUp: async () => ({ error: null }),
+  resendVerification: async () => ({ error: null }),
+  forgotPassword: async () => ({ error: null }),
   signOut: async () => {},
 });
 
@@ -82,6 +88,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function resendVerification(email: string): Promise<{ error: string | null }> {
+    try {
+      const result = await apiResendVerification(email);
+      return { error: result.error ?? null };
+    } catch {
+      return { error: 'Network error. Please try again.' };
+    }
+  }
+
+  async function forgotPassword(email: string): Promise<{ error: string | null }> {
+    try {
+      const result = await apiForgotPassword(email);
+      return { error: result.error ?? null };
+    } catch {
+      return { error: 'Network error. Please try again.' };
+    }
+  }
+
   async function signOut(): Promise<void> {
     await clearToken();
     setUser(null);
@@ -95,6 +119,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: !!user,
         signIn,
         signUp,
+        resendVerification,
+        forgotPassword,
         signOut,
       }}
     >
