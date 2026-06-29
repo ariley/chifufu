@@ -53,63 +53,72 @@ export default function HomePage() {
           </div>
         </div>
 
-        <div className="relative mx-auto w-full max-w-[430px]">
-          <div className="relative rounded-lg border border-[#d7e6d8] bg-white p-4 shadow-[0_24px_80px_rgba(29,64,44,0.14)]">
-            <div className="rounded-md bg-[#10291f] p-5 text-white">
-              <div className="mb-5 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Image
-                    src="/chifufu-icon.png"
-                    alt="Chifufu app icon"
-                    width={52}
-                    height={52}
-                    className="rounded-xl"
-                    priority
-                  />
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.24em] text-[#94d6b6]">
-                      Chifufu
-                    </p>
-                    <p className="mt-1 text-xl font-semibold">Food choices, sorted</p>
+        <div className="relative mx-auto w-full max-w-[390px]">
+          <div className="relative aspect-[9/19.5] rounded-[56px] border border-[#d7e6d8] bg-white p-3 shadow-[0_24px_80px_rgba(29,64,44,0.14)]">
+            <div className="h-full rounded-[48px] bg-[#071b15] p-3 shadow-inner">
+              <div className="mx-auto mb-4 h-7 w-28 rounded-full bg-[#06120f]" />
+              <div className="flex h-[calc(100%-44px)] flex-col rounded-[38px] bg-[#10291f] p-5 text-white">
+                <div className="mb-7 flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Image
+                      src="/chifufu-icon.png"
+                      alt="Chifufu app icon"
+                      width={52}
+                      height={52}
+                      className="rounded-xl"
+                      priority
+                    />
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.24em] text-[#94d6b6]">
+                        Chifufu
+                      </p>
+                      <p className="mt-1 text-xl font-semibold">Food choices, sorted</p>
+                    </div>
+                  </div>
+                  <div className="shrink-0 rounded-md bg-[#1D9E75] px-3 py-1 text-sm font-semibold">
+                    Preview
                   </div>
                 </div>
-                <div className="rounded-md bg-[#1D9E75] px-3 py-1 text-sm font-semibold">
-                  Preview
-                </div>
-              </div>
 
-              <div className="rounded-md bg-white p-3 text-[#193126]">
-                <p className="mb-3 text-sm font-medium text-[#65786e]">
-                  The kind of answers we are building toward
-                </p>
-                <div className="space-y-3">
-                  {sampleFinds.map((example) => (
-                    <div
-                      key={example.item}
-                      className="flex items-center justify-between gap-4 rounded-md border border-[#e5eee7] bg-[#fbfaf6] p-3"
-                    >
-                      <div>
-                        <p className="text-base font-semibold capitalize">{example.item}</p>
-                        <p className="text-sm text-[#607267]">{example.place}</p>
+                <div className="rounded-2xl bg-white p-3 text-[#193126]">
+                  <p className="mb-3 text-sm font-medium text-[#65786e]">
+                    The kind of answers we are building toward
+                  </p>
+                  <div className="space-y-3">
+                    {sampleFinds.map((example) => (
+                      <div
+                        key={example.item}
+                        className="flex items-center justify-between gap-4 rounded-xl border border-[#e5eee7] bg-[#fbfaf6] p-3"
+                      >
+                        <div>
+                          <p className="text-base font-semibold capitalize">
+                            {example.item}
+                          </p>
+                          <p className="text-sm text-[#607267]">{example.place}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-semibold text-[#1D9E75]">
+                            {example.signal}
+                          </p>
+                        </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-[#1D9E75]">
-                          {example.signal}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="rounded-md bg-[#183b2d] p-4">
-                  <p className="text-2xl font-semibold">Price</p>
-                  <p className="text-sm text-[#b7d8c0]">what it may cost</p>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl bg-[#183b2d] p-4">
+                    <p className="text-2xl font-semibold">Price</p>
+                    <p className="text-sm text-[#b7d8c0]">what it may cost</p>
+                  </div>
+                  <div className="rounded-2xl bg-[#183b2d] p-4">
+                    <p className="text-2xl font-semibold">Trip</p>
+                    <p className="text-sm text-[#b7d8c0]">whether it is worth it</p>
+                  </div>
                 </div>
-                <div className="rounded-md bg-[#183b2d] p-4">
-                  <p className="text-2xl font-semibold">Trip</p>
-                  <p className="text-sm text-[#b7d8c0]">whether it is worth it</p>
+
+                <div className="mt-auto pt-8">
+                  <div className="mx-auto h-1.5 w-28 rounded-full bg-[#345247]" />
                 </div>
               </div>
             </div>
