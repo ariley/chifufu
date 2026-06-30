@@ -76,6 +76,27 @@ export interface ProductDetailsResponse {
   source?: string;
 }
 
+export interface ProductSuggestion {
+  id: string;
+  label: string;
+  brand?: string | null;
+  source?: string;
+}
+
+export async function fetchProductSuggestions(query: string) {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+
+  const res = await fetch(`${BASE}/api/product/suggestions?q=${encodeURIComponent(trimmed)}`);
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.error || `Request failed ${res.status}`);
+  }
+
+  return res.json() as Promise<ProductSuggestion[]>;
+}
+
 export async function fetchPricedGroceryOptions(
   query: string,
   location: string,

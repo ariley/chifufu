@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   FlatList,
   Image,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -73,6 +74,7 @@ export default function ResultsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saleOnly, setSaleOnly] = useState(false);
+  const [selectedBrand, setSelectedBrand] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const resultsLocationLabel = locationLabel?.trim() || 'your selected location';
   const { preferences } = usePreferences();
@@ -190,6 +192,10 @@ export default function ResultsScreen() {
   }, [loadResults]);
 
   useEffect(() => {
+    setSelectedBrand(null);
+  }, [query]);
+
+  useEffect(() => {
     setSelectedIds(current => {
       const validIds = new Set(results.map(item => item.id));
       const next = new Set([...current].filter(id => validIds.has(id)));
@@ -199,7 +205,11 @@ export default function ResultsScreen() {
 
   const saleCount = results.filter(item => item.onSale).length;
   const oneStoreResults = preferences.shopSingleStore ? preferSingleStore(results) : results;
-  const visibleResults = saleOnly ? oneStoreResults.filter(item => item.onSale) : oneStoreResults;
+  const brandOptions = useMemo(() => getBrandOptions(oneStoreResults), [oneStoreResults]);
+  const brandFilteredResults = selectedBrand
+    ? oneStoreResults.filter(item => normalizeBrand(item.brand) === selectedBrand)
+    : oneStoreResults;
+  const visibleResults = saleOnly ? brandFilteredResults.filter(item => item.onSale) : brandFilteredResults;
   const visibleSelectedCount = visibleResults.filter(item => selectedIds.has(item.id)).length;
   const selectedCount = selectedIds.size;
   const preferredStoreName = preferences.shopSingleStore ? oneStoreResults.find(item => item.storeName)?.storeName : null;
@@ -368,7 +378,7 @@ export default function ResultsScreen() {
             results.length > 0 ? (
               <View style={styles.resultsTools}>
                 <Text style={[styles.storeHeader, { color: textTer }]}>
-                  {saleOnly ? 'Sale items across supermarkets' : 'Priced options across supermarkets'}
+                  {saleOnly ? 'Sale items with live prices' : 'Live prices and nearby product matches'}
                 </Text>
                 {preferences.shopSingleStore && preferredStoreName ? (
                   <Text style={[styles.preferenceNote, { color: textSec }]}>
@@ -383,7 +393,7 @@ export default function ResultsScreen() {
                     ]}
                     onPress={() => setSaleOnly(false)}
                     accessibilityRole="button"
-                    accessibilityLabel="Show all priced options"
+                    accessibilityLabel="Show all product matches"
                   >
                     <Text style={[styles.filterChipText, { color: !saleOnly ? accentLight : textSec }]}>
                       All {results.length}
@@ -414,6 +424,43 @@ export default function ResultsScreen() {
                     </Text>
                   </TouchableOpacity>
                 </View>
+                {brandOptions.length > 1 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.brandChips}
+                  >
+                    <TouchableOpacity
+                      style={[
+                        styles.brandChip,
+                        { borderColor: selectedBrand === null ? accent : border, backgroundColor: selectedBrand === null ? accent : bgSec },
+                      ]}
+                      onPress={() => setSelectedBrand(null)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Show all brands"
+                    >
+                      <Text style={[styles.brandChipText, { color: selectedBrand === null ? accentLight : textSec }]}>
+                        All brands
+                      </Text>
+                    </TouchableOpacity>
+                    {brandOptions.map((option) => (
+                      <TouchableOpacity
+                        key={option.key}
+                        style={[
+                          styles.brandChip,
+                          { borderColor: selectedBrand === option.key ? accent : border, backgroundColor: selectedBrand === option.key ? accent : bgSec },
+                        ]}
+                        onPress={() => setSelectedBrand(option.key)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Show ${option.label} products`}
+                      >
+                        <Text style={[styles.brandChipText, { color: selectedBrand === option.key ? accentLight : textSec }]} numberOfLines={1}>
+                          {option.label} {option.count}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                ) : null}
               </View>
             ) : null
           }
@@ -421,7 +468,7 @@ export default function ResultsScreen() {
             <View style={styles.emptyWrap}>
               <Text style={styles.emptyIcon}>🔍</Text>
               <Text style={[styles.emptyTitle, { color: text }]}>
-                {saleOnly ? `No sale items for "${query}"` : `No priced options for "${query}"`}
+                {saleOnly ? `No sale items for "${query}"` : `No product matches for "${query}"`}
               </Text>
               <Text style={[styles.emptyMsg, { color: textSec }]}>
                 near {resultsLocationLabel}
@@ -534,6 +581,30 @@ function preferSingleStore(items: GroceryItem[]) {
   return [...storeItems, ...infoItems];
 }
 
+function normalizeBrand(brand?: string | null) {
+  return String(brand ?? '').trim().toLowerCase();
+}
+
+function getBrandOptions(items: GroceryItem[]) {
+  const brands = new Map<string, { label: string; count: number; minPrice: number }>();
+  items.forEach(item => {
+    const label = item.brand?.trim();
+    if (!label) return;
+    const key = normalizeBrand(label);
+    const current = brands.get(key) ?? { label, count: 0, minPrice: Number.POSITIVE_INFINITY };
+    current.count += 1;
+    if (Number.isFinite(item.priceValue ?? NaN)) {
+      current.minPrice = Math.min(current.minPrice, item.priceValue as number);
+    }
+    brands.set(key, current);
+  });
+
+  return [...brands.entries()]
+    .map(([key, value]) => ({ key, ...value }))
+    .sort((a, b) => a.minPrice - b.minPrice || b.count - a.count || a.label.localeCompare(b.label))
+    .slice(0, 12);
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   nav: {
@@ -590,6 +661,24 @@ const styles = StyleSheet.create({
   },
   filterChipText: {
     fontSize: 13,
+    fontWeight: '700',
+  },
+  brandChips: {
+    gap: 8,
+    paddingTop: 10,
+    paddingRight: 16,
+  },
+  brandChip: {
+    height: 32,
+    maxWidth: 180,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  brandChipText: {
+    fontSize: 12,
     fontWeight: '700',
   },
   selectVisibleBtn: {

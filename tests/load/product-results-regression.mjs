@@ -1,4 +1,6 @@
 const API = process.env.API_URL ?? 'http://localhost:3000';
+const LOCAL_WITHOUT_LIVE_PROVIDER = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/i.test(API)
+  && !process.env.KROGER_CLIENT_ID;
 
 async function postResults(searchQuery) {
   const response = await fetch(`${API}/api/results`, {
@@ -34,8 +36,37 @@ async function getDetails(query) {
   return response.json();
 }
 
+async function getSuggestions(query) {
+  const response = await fetch(`${API}/api/product/suggestions?q=${encodeURIComponent(query)}`);
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`suggestions failed ${response.status}: ${body}`);
+  }
+  return response.json();
+}
+
 function uniqueCount(items, pick) {
   return new Set(items.map(pick).filter(Boolean)).size;
+}
+
+function normalize(value) {
+  return String(value ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+async function assertSuggestions(query, expectedLabels) {
+  const suggestions = await getSuggestions(query);
+  const labels = suggestions.map(item => item.label.toLowerCase());
+  expectedLabels.forEach((expected) => {
+    if (!labels.includes(expected.toLowerCase())) {
+      throw new Error(`${query}: expected suggestion "${expected}", got ${labels.join(', ')}`);
+    }
+  });
+  console.log(JSON.stringify({ query, suggestions: suggestions.slice(0, 6) }, null, 2));
 }
 
 async function assertDistinctProductRows(searchQuery) {
@@ -86,25 +117,33 @@ async function assertDistinctProductRows(searchQuery) {
   }, null, 2));
 }
 
+await assertSuggestions('cre', ['cream cheese', 'sour cream']);
 await assertDistinctProductRows('Norwegian cream cheese');
 await assertDistinctProductRows('Norwegian crème cheese');
-await assertDistinctProductRows('Eggs');
-await assertDistinctProductRows('Milk');
-await assertDistinctProductRows('Carrots');
-await assertDistinctProductRows('Orange juice with pulp');
-const orangeJuiceItems = await postResults('Orange juice with pulp');
-if (orangeJuiceItems.some(item => /\b(no pulp|pulp free|sans pulpe)\b/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {
-  throw new Error('Orange juice with pulp: no-pulp product leaked into results');
+await assertDistinctProductRows('Rye bread');
+if (LOCAL_WITHOUT_LIVE_PROVIDER) {
+  console.log('Skipping live-provider product cases: local API has no Kroger credentials.');
+} else {
+  await assertDistinctProductRows('Organic eggs');
+  await assertDistinctProductRows('Grocery Outlet eggs');
+  await assertDistinctProductRows('Eggs');
+  await assertDistinctProductRows('Milk');
+  await assertDistinctProductRows('Carrots');
+  await assertDistinctProductRows('Orange juice with pulp');
+  const orangeJuiceItems = await postResults('Orange juice with pulp');
+  if (orangeJuiceItems.some(item => /\b(no pulp|pulp free|sans pulpe)\b/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {
+    throw new Error('Orange juice with pulp: no-pulp product leaked into results');
+  }
+  if (orangeJuiceItems.some(item => !/orange/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {
+    throw new Error('Orange juice with pulp: non-orange product leaked into results');
+  }
+  if (orangeJuiceItems.some(item => !/juice|pulp|pulpy/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {
+    throw new Error('Orange juice with pulp: non-juice product leaked into results');
+  }
+  await assertDistinctProductRows('Greek yogurt');
+  await assertDistinctProductRows('Peanut butter');
+  await assertDistinctProductRows('Dark chocolate');
 }
-if (orangeJuiceItems.some(item => !/orange/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {
-  throw new Error('Orange juice with pulp: non-orange product leaked into results');
-}
-if (orangeJuiceItems.some(item => !/juice|pulp|pulpy/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {
-  throw new Error('Orange juice with pulp: non-juice product leaked into results');
-}
-await assertDistinctProductRows('Greek yogurt');
-await assertDistinctProductRows('Peanut butter');
-await assertDistinctProductRows('Dark chocolate');
 
 const israeliFetaItems = await postResults('Israeli feta');
 if (israeliFetaItems.some(item => /couscous|salad/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {

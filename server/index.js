@@ -11,12 +11,14 @@ app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const RESULTS_CACHE_VERSION = 'products-v8-generic-catalog';
+const RESULTS_CACHE_VERSION = 'products-v9-store-aware-catalog';
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
 const PRODUCT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const SUGGESTION_CACHE_TTL_MS = 10 * 60 * 1000;
 const resultsCache = new Map();
 const productDetailsCache = new Map();
 const productCandidatesCache = new Map();
+const productSuggestionsCache = new Map();
 const pendingResults = new Map();
 const backgroundRefreshes = new Map();
 
@@ -90,6 +92,20 @@ function getCachedProductCandidates(key) {
 
 function setCachedProductCandidates(key, items) {
   productCandidatesCache.set(key, { createdAt: Date.now(), items });
+}
+
+function getCachedProductSuggestions(key) {
+  const cached = productSuggestionsCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.createdAt > SUGGESTION_CACHE_TTL_MS) {
+    productSuggestionsCache.delete(key);
+    return null;
+  }
+  return cached.items;
+}
+
+function setCachedProductSuggestions(key, items) {
+  productSuggestionsCache.set(key, { createdAt: Date.now(), items });
 }
 
 function withTimeout(promise, timeoutMs) {
@@ -176,7 +192,7 @@ const DEFAULT_STORES = [
 ];
 
 function productDetailQuery(searchQuery) {
-  const query = cleanSearchQuery(searchQuery);
+  const query = stripStoreSearchTerms(cleanSearchQuery(searchQuery));
   return query;
 }
 
@@ -228,7 +244,7 @@ function mapOpenFoodFactsProduct(product, query) {
 
   return {
     query,
-    name: withoutBrandPrefix(product?.product_name || product?.generic_name || query, product?.brands),
+    name: withoutBrandPrefix(product?.product_name || product?.generic_name || '', product?.brands),
     brand: cleanText(product?.brands) || null,
     productSize: cleanText(product?.quantity) || cleanText(product?.serving_size) || null,
     imageUrl: product?.image_front_url || product?.image_url || null,
@@ -239,6 +255,15 @@ function mapOpenFoodFactsProduct(product, query) {
     labels: normalizeTags(product?.labels_tags),
     source: 'Open Food Facts',
     categoryText: normalizeTags(product?.categories_tags).join(' '),
+  };
+}
+
+function mapSuggestion(label, source = 'catalog', brand = null) {
+  return {
+    id: normalizeCachePart([source, brand, label].filter(Boolean).join('|')).replace(/[^a-z0-9]+/g, '-'),
+    label: cleanText(label),
+    brand: cleanText(brand) || null,
+    source,
   };
 }
 
@@ -379,6 +404,14 @@ function buildOpenFoodFactsTerms(searchQuery) {
     .slice(0, 16);
 }
 
+function stripStoreSearchTerms(query) {
+  let next = ` ${normalizeForSearch(query)} `;
+  for (const pattern of STORE_SEARCH_PATTERNS) {
+    next = next.replace(pattern, ' ');
+  }
+  return next.replace(/\s+/g, ' ').trim() || cleanSearchQuery(query);
+}
+
 function contiguousPhrases(tokens) {
   const phrases = [];
   for (let size = Math.min(4, tokens.length); size >= 2; size -= 1) {
@@ -449,6 +482,83 @@ const PRODUCT_PACKAGING_WORDS = new Set([
   'tub',
 ]);
 
+const STORE_SEARCH_PATTERNS = [
+  /\bgrocery\s+outlet\b/g,
+  /\bbargain\s+market\b/g,
+  /\bfoods?\s*co\b/g,
+  /\bfood\s*4\s*less\b/g,
+  /\bkroger\b/g,
+  /\bsafeway\b/g,
+  /\bwhole\s+foods?\b/g,
+  /\btrader\s+joe'?s\b/g,
+  /\bcostco\b/g,
+  /\bwinco\b/g,
+  /\bsprouts\b/g,
+  /\bwalmart\b/g,
+  /\btarget\b/g,
+  /\baldi\b/g,
+  /\bpublix\b/g,
+  /\bshoprite\b/g,
+  /\bheb\b/g,
+  /\bh-?e-?b\b/g,
+  /\bmeijer\b/g,
+  /\bwegmans\b/g,
+  /\bgiant\b/g,
+];
+
+const COMMON_PRODUCT_SUGGESTIONS = [
+  'cream cheese',
+  'Norwegian cream cheese',
+  'sour cream',
+  'heavy cream',
+  'whipped cream',
+  'coffee creamer',
+  'half and half',
+  'eggs',
+  'organic eggs',
+  'large brown eggs',
+  'milk',
+  'whole milk',
+  'oat milk',
+  'almond milk',
+  'butter',
+  'yogurt',
+  'greek yogurt',
+  'cheddar cheese',
+  'mozzarella cheese',
+  'feta cheese',
+  'parmesan cheese',
+  'rye bread',
+  'sourdough bread',
+  'whole wheat bread',
+  'bagels',
+  'tortillas',
+  'rice',
+  'pasta',
+  'peanut butter',
+  'jam',
+  'orange juice',
+  'apple juice',
+  'coffee',
+  'tea',
+  'bananas',
+  'apples',
+  'avocados',
+  'carrots',
+  'lettuce',
+  'tomatoes',
+  'potatoes',
+  'onions',
+  'chicken breast',
+  'ground beef',
+  'salmon',
+  'tuna',
+  'black beans',
+  'chickpeas',
+  'olive oil',
+  'dark chocolate',
+];
+
 async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1200, allowCoreFallback = true, originalSearchQuery = searchQuery) {
   const cacheKey = `candidates:${normalizeCachePart(originalSearchQuery)}:${normalizeCachePart(searchQuery)}:${limit}`;
   const cached = getCachedProductCandidates(cacheKey);
@@ -457,7 +567,7 @@ async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1
   const seen = new Set();
   const candidates = [];
   const terms = buildOpenFoodFactsTerms(searchQuery);
-  const perTermLimit = Math.max(limit, 8);
+  const perTermLimit = Math.max(limit * 4, 24);
   const deadline = Date.now() + timeoutMs;
 
   for (const term of terms) {
@@ -492,6 +602,61 @@ async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1
     }
   }
   return candidates;
+}
+
+async function suggestProducts(searchQuery, limit = 10, timeoutMs = 1200) {
+  const query = productDetailQuery(searchQuery);
+  const normalized = normalizeCachePart(query);
+  if (normalized.length < 2) return [];
+
+  const cacheKey = `suggestions:${normalized}:${limit}`;
+  const cached = getCachedProductSuggestions(cacheKey);
+  if (cached) return cached;
+
+  const queryTokens = normalizeSearchTokens(normalized);
+  const suggestions = [];
+  const seen = new Set();
+  const add = (suggestion) => {
+    const label = cleanText(suggestion?.label);
+    if (!label) return;
+    const key = normalizeCachePart(label);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    suggestions.push({ ...suggestion, label });
+  };
+
+  COMMON_PRODUCT_SUGGESTIONS
+    .filter(label => suggestionMatches(label, normalized, queryTokens))
+    .slice(0, limit)
+    .forEach(label => add(mapSuggestion(label, 'common foods')));
+
+  if (suggestions.length < 3 && normalized.length >= 5) {
+    try {
+      const data = await fetchOpenFoodFactsSearch(normalized, Math.max(16, limit * 2), timeoutMs);
+      for (const product of data.products ?? []) {
+        const details = mapOpenFoodFactsProduct(product, normalized);
+        const label = [details.brand, details.name].filter(Boolean).join(' ');
+        if (!label || !suggestionMatches(label, normalized, queryTokens)) continue;
+        add(mapSuggestion(label, 'Open Food Facts', details.brand));
+        if (suggestions.length >= limit) break;
+      }
+    } catch (err) {
+      if (err.message !== 'timeout') {
+        console.error('product suggestions fetch error:', err.message);
+      }
+    }
+  }
+
+  const items = suggestions.slice(0, limit);
+  setCachedProductSuggestions(cacheKey, items);
+  return items;
+}
+
+function suggestionMatches(label, normalizedQuery, queryTokens) {
+  const text = normalizeCachePart(label);
+  if (text.includes(normalizedQuery)) return true;
+  const tokens = normalizeSearchTokens(text);
+  return queryTokens.every(token => tokens.some(candidate => candidate.startsWith(token)));
 }
 
 async function fetchOpenFoodFactsSearch(term, limit, timeoutMs) {
@@ -635,6 +800,48 @@ function buildCatalogResults({ searchQuery, productCandidates }) {
         isLivePrice: false,
       };
     });
+}
+
+function buildNearbyStoreCatalogResults({ productCandidates, places, pricedItems, limit = 8 }) {
+  const usableProducts = (productCandidates ?? []).filter(isUsableProductCandidate).slice(0, 4);
+  if (usableProducts.length === 0 || !Array.isArray(places) || places.length === 0) return [];
+
+  const liveStoreNames = new Set((pricedItems ?? [])
+    .map(item => normalizeCachePart(item.name))
+    .filter(Boolean));
+  const groceryPlaces = places
+    .filter(place => place?.name && !liveStoreNames.has(normalizeCachePart(place.name)))
+    .slice(0, limit);
+
+  const rows = [];
+  groceryPlaces.forEach((place, placeIndex) => {
+    const product = usableProducts[placeIndex % usableProducts.length];
+    const detailQuery = [product.brand, product.name].filter(Boolean).join(' ') || product.query;
+    rows.push({
+      id: `nearby-store-${placeIndex}-${normalizeCachePart(place.name).replace(/[^a-z0-9]+/g, '-')}-${normalizeCachePart(detailQuery).replace(/[^a-z0-9]+/g, '-')}`,
+      name: place.name,
+      description: product.name,
+      brand: product.brand || null,
+      productSize: product.productSize || null,
+      price: null,
+      priceValue: null,
+      distance: place.distMi ? `${place.distMi} mi` : '',
+      badges: ['nearby store', 'product info'],
+      address: place.address || '',
+      imageUrl: product.imageUrl ?? null,
+      ingredients: product.ingredients ?? null,
+      calories: product.calories ?? null,
+      nutrition: product.nutrition ?? null,
+      detailQuery,
+      lat: place.lat,
+      lng: place.lng,
+      rating: place.rating,
+      source: 'Nearby store + Open Food Facts',
+      isLivePrice: false,
+    });
+  });
+
+  return rows;
 }
 
 async function searchKrogerPricedResults({ searchQuery, lat, lng, radiusMiles = 15, limit = 12 }) {
@@ -982,6 +1189,14 @@ app.get('/api/product/details', async (req, res) => {
   res.json(details);
 });
 
+app.get('/api/product/suggestions', async (req, res) => {
+  const { q, limit } = req.query;
+  if (!q) return res.json([]);
+
+  const suggestions = await suggestProducts(String(q), Math.min(parseInt(limit ?? 10, 10) || 10, 16), 1600);
+  res.json(suggestions);
+});
+
 app.get('/', (_req, res) => res.json({ name: 'Chifufu API', status: 'ok', version: '2.0' }));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
@@ -1011,20 +1226,31 @@ app.post('/api/results', async (req, res) => {
   }
 
   res.set('X-Chifufu-Cache', 'MISS');
+  const productQuery = productDetailQuery(searchQuery);
   const generation = Promise.all([
-    searchKrogerPricedResults({ searchQuery, lat, lng, limit: 10 }).catch(err => {
+    searchKrogerPricedResults({ searchQuery: productQuery, lat, lng, limit: 10 }).catch(err => {
       console.error('priced provider error:', err.message);
       return [];
     }),
-    searchOpenFoodFactsProducts(searchQuery, 12, 4500),
-  ]).then(async ([pricedItems, productCandidates]) => {
+    searchOpenFoodFactsProducts(productQuery, 12, 4500),
+    resolvePlaces({ location, category: 'grocery', lat, lng }).catch(err => {
+      console.error('nearby grocery store error:', err.message);
+      return [];
+    }),
+  ]).then(async ([pricedItems, productCandidates, places]) => {
+    const nearbyStoreItems = buildNearbyStoreCatalogResults({
+      productCandidates,
+      places: filterPlacesForLocation(places, location),
+      pricedItems,
+      limit: 8,
+    });
     const pricedDetailQueries = new Set(pricedItems.map(item => normalizeCachePart(item.detailQuery)));
     const catalogItems = buildCatalogResults({ searchQuery, productCandidates })
       .filter(item => !pricedDetailQueries.has(normalizeCachePart(item.detailQuery)));
-    let items = [...pricedItems, ...catalogItems].slice(0, 20);
+    let items = [...pricedItems, ...nearbyStoreItems, ...catalogItems].slice(0, 24);
     if (items.length === 0) {
-      const details = await fetchProductDetails(searchQuery, 3500);
-      const relevantDetails = details && isRelevantProductCandidate(details, searchQuery, searchQuery)
+      const details = await fetchProductDetails(productQuery, 3500);
+      const relevantDetails = details && isRelevantProductCandidate(details, productQuery, productQuery)
         ? [details]
         : [];
       items = buildCatalogResults({ searchQuery, productCandidates: relevantDetails });

@@ -16,6 +16,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { RootStackParamList } from '../types';
+import { fetchProductSuggestions, ProductSuggestion } from '../lib/api';
 import { useBucketContext } from '../App';
 import { useSearchHistory } from '../hooks/useSearchHistory';
 import { SavedLocation, useSavedLocations } from '../hooks/useSavedLocations';
@@ -47,13 +48,50 @@ export default function HomeScreen() {
   const [locating, setLocating] = useState(true);
   const [resolvingSearchLocation, setResolvingSearchLocation] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [suggestions, setSuggestions] = useState<ProductSuggestion[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const searchInputRef = useRef<TextInput>(null);
+  const suggestionSeq = useRef(0);
   const { history, push: pushHistory, remove: removeHistory } = useSearchHistory();
   const { locations: savedLocations, save: saveLocation, remove: removeLocation } = useSavedLocations();
 
   useEffect(() => {
     detectLocation();
   }, []);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    const seq = suggestionSeq.current + 1;
+    suggestionSeq.current = seq;
+
+    if (q.length < 2) {
+      setSuggestions([]);
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    setSuggestionsLoading(true);
+    const timer = setTimeout(() => {
+      fetchProductSuggestions(q)
+        .then((items) => {
+          if (seq === suggestionSeq.current) {
+            setSuggestions(items);
+          }
+        })
+        .catch(() => {
+          if (seq === suggestionSeq.current) {
+            setSuggestions([]);
+          }
+        })
+        .finally(() => {
+          if (seq === suggestionSeq.current) {
+            setSuggestionsLoading(false);
+          }
+        });
+    }, 220);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   async function detectLocation() {
     setLocating(true);
@@ -183,6 +221,12 @@ export default function HomeScreen() {
     } finally {
       setResolvingSearchLocation(false);
     }
+  }
+
+  function handleSuggestionPress(suggestion: ProductSuggestion) {
+    setSearchQuery(suggestion.label);
+    setSuggestions([]);
+    handleSearch(suggestion.label);
   }
 
   return (
@@ -331,6 +375,35 @@ export default function HomeScreen() {
           )}
         </View>
 
+        {(suggestions.length > 0 || suggestionsLoading) && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionLabel, { color: textTer }]}>SUGGESTIONS</Text>
+            <View style={[styles.suggestionPanel, { backgroundColor: bgSec, borderColor: border }]}>
+              {suggestionsLoading && suggestions.length === 0 ? (
+                <Text style={[styles.suggestionMeta, { color: textTer }]}>Finding products...</Text>
+              ) : null}
+              {suggestions.map((suggestion) => (
+                <TouchableOpacity
+                  key={suggestion.id}
+                  style={[styles.suggestionRow, { borderBottomColor: border }]}
+                  onPress={() => handleSuggestionPress(suggestion)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Search for ${suggestion.label}`}
+                >
+                  <Text style={[styles.suggestionText, { color: text }]} numberOfLines={1}>
+                    {suggestion.label}
+                  </Text>
+                  {suggestion.source ? (
+                    <Text style={[styles.suggestionMeta, { color: textTer }]} numberOfLines={1}>
+                      {suggestion.source}
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
         {/* Recent searches */}
         {history.length > 0 && (
           <View style={styles.section}>
@@ -458,6 +531,24 @@ const styles = StyleSheet.create({
   },
   searchIcon: { fontSize: 16 },
   searchInput: { flex: 1, fontSize: 15 },
+  suggestionPanel: {
+    borderWidth: 0.5,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  suggestionRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+  },
+  suggestionText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  suggestionMeta: {
+    fontSize: 11,
+    marginTop: 2,
+  },
   section: { paddingHorizontal: 24, marginBottom: 24 },
   sectionHeader: {
     flexDirection: 'row',

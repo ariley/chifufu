@@ -185,7 +185,7 @@ function productMatchesQuery(query, originalQuery = query) {
 }
 
 function buildSearchTerms(query) {
-  const normalizedQuery = normalizeForSearch(query);
+  const normalizedQuery = stripStoreSearchTerms(query);
   const tokens = normalizedQuery
     .split(/[^a-z0-9]+/)
     .filter(token => token.length > 2);
@@ -208,6 +208,14 @@ function buildSearchTerms(query) {
   }
 
   return [...new Set(terms.filter(Boolean))].slice(0, 16);
+}
+
+function stripStoreSearchTerms(query) {
+  let next = ` ${normalizeForSearch(query)} `;
+  for (const pattern of STORE_SEARCH_PATTERNS) {
+    next = next.replace(pattern, ' ');
+  }
+  return next.replace(/\s+/g, ' ').trim() || normalizeForSearch(query);
 }
 
 function contiguousPhrases(tokens) {
@@ -293,6 +301,30 @@ const PRODUCT_PACKAGING_WORDS = new Set([
   'tin',
   'tub',
 ]);
+
+const STORE_SEARCH_PATTERNS = [
+  /\bgrocery\s+outlet\b/g,
+  /\bbargain\s+market\b/g,
+  /\bfoods?\s*co\b/g,
+  /\bfood\s*4\s*less\b/g,
+  /\bkroger\b/g,
+  /\bsafeway\b/g,
+  /\bwhole\s+foods?\b/g,
+  /\btrader\s+joe'?s\b/g,
+  /\bcostco\b/g,
+  /\bwinco\b/g,
+  /\bsprouts\b/g,
+  /\bwalmart\b/g,
+  /\btarget\b/g,
+  /\baldi\b/g,
+  /\bpublix\b/g,
+  /\bshoprite\b/g,
+  /\bheb\b/g,
+  /\bh-?e-?b\b/g,
+  /\bmeijer\b/g,
+  /\bwegmans\b/g,
+  /\bgiant\b/g,
+];
 
 function normalizeForSearch(value) {
   return String(value ?? '')
