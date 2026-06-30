@@ -24,7 +24,6 @@ import { useAuth } from '../contexts/AuthContext';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
-const QUICK_SEARCHES = ['Milk', 'Eggs', 'Bread', 'Chicken'];
 const OAKLAND_COORDS = { lat: 37.8044, lng: -122.2712 };
 
 function normalizeLocationLabel(value: string) {
@@ -330,24 +329,6 @@ export default function HomeScreen() {
               <Text style={{ color: textTer, fontSize: 16 }}>✕</Text>
             </TouchableOpacity>
           )}
-        </View>
-
-        {/* Quick search chips */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionLabel, { color: textTer }]}>QUICK SEARCH</Text>
-          <View style={styles.chipWrap}>
-            {QUICK_SEARCHES.map((q) => (
-              <TouchableOpacity
-                key={q}
-                style={[styles.chip, { backgroundColor: bgSec, borderColor: border }]}
-                onPress={() => handleSearch(q)}
-                accessibilityRole="button"
-                accessibilityLabel={`Search for ${q}`}
-              >
-                <Text style={[styles.chipText, { color: textSec }]}>{q}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
 
         {/* Recent searches */}

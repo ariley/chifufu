@@ -3,6 +3,7 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -12,6 +13,7 @@ import * as Application from 'expo-application';
 import Constants from 'expo-constants';
 import { StatusBar } from 'expo-status-bar';
 import { useThemeContext, THEME_DEFS, ThemeKey } from '../contexts/ThemeContext';
+import { usePreferences } from '../hooks/usePreferences';
 
 const APP_VERSION = Application.nativeApplicationVersion ?? Constants.expoConfig?.version ?? 'dev';
 const BUILD_LABEL = Application.nativeBuildVersion ?? 'dev';
@@ -19,6 +21,7 @@ const BUILD_LABEL = Application.nativeBuildVersion ?? 'dev';
 export default function SettingsScreen() {
   const navigation = useNavigation();
   const { bg, bgSec, text, textSec, textTer, border, accent, themeKey, setTheme } = useThemeContext();
+  const { preferences, setShopSingleStore } = usePreferences();
   const dark = bg === '#000000' || bg.toLowerCase() === '#000000' || bg === '#0F0800';
 
   return (
@@ -67,6 +70,27 @@ export default function SettingsScreen() {
               </React.Fragment>
             );
           })}
+        </View>
+
+        {/* Shopping section */}
+        <Text style={[styles.sectionHeader, { color: textTer }]}>SHOPPING</Text>
+        <View style={[styles.card, { backgroundColor: bgSec, borderColor: border }]}>
+          <View style={styles.infoRow}>
+            <View style={styles.prefText}>
+              <Text style={[styles.infoLabel, { color: text }]}>Shop in one location</Text>
+              <Text style={[styles.prefDescription, { color: textTer }]}>
+                Prefer results from one store when possible.
+              </Text>
+            </View>
+            <Switch
+              value={preferences.shopSingleStore}
+              onValueChange={setShopSingleStore}
+              trackColor={{ false: border, true: accent }}
+              thumbColor="#fff"
+              accessibilityRole="switch"
+              accessibilityLabel="Shop in one location"
+            />
+          </View>
         </View>
 
         {/* About section */}
@@ -153,4 +177,6 @@ const styles = StyleSheet.create({
   },
   infoLabel: { fontSize: 15 },
   infoValue: { fontSize: 15 },
+  prefText: { flex: 1, paddingRight: 12 },
+  prefDescription: { fontSize: 12, marginTop: 3, lineHeight: 16 },
 });

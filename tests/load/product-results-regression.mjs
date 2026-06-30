@@ -96,6 +96,12 @@ const orangeJuiceItems = await postResults('Orange juice with pulp');
 if (orangeJuiceItems.some(item => /\b(no pulp|pulp free|sans pulpe)\b/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {
   throw new Error('Orange juice with pulp: no-pulp product leaked into results');
 }
+if (orangeJuiceItems.some(item => !/orange/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {
+  throw new Error('Orange juice with pulp: non-orange product leaked into results');
+}
+if (orangeJuiceItems.some(item => !/juice|pulp|pulpy/i.test([item.brand, item.description].filter(Boolean).join(' ')))) {
+  throw new Error('Orange juice with pulp: non-juice product leaked into results');
+}
 await assertDistinctProductRows('Greek yogurt');
 await assertDistinctProductRows('Peanut butter');
 await assertDistinctProductRows('Dark chocolate');

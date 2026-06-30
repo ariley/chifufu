@@ -54,7 +54,6 @@ export interface PricedStoreOption {
     servingSize?: string;
     nutriScore?: string | null;
   } | null;
-  productUrl?: string | null;
   detailQuery?: string;
   lat?: number;
   lng?: number;
@@ -74,7 +73,6 @@ export interface ProductDetailsResponse {
   nutrition?: PricedStoreOption['nutrition'];
   allergens?: string[];
   labels?: string[];
-  productUrl?: string | null;
   source?: string;
 }
 

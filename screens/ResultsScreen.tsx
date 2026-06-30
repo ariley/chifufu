@@ -17,6 +17,7 @@ import { StatusBar } from 'expo-status-bar';
 import { GroceryItem, RootStackParamList } from '../types';
 import { fetchPricedGroceryOptions, fetchProductDetails, PricedStoreOption } from '../lib/api';
 import { useBucketContext } from '../App';
+import { usePreferences } from '../hooks/usePreferences';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Results'>;
 type Route = RouteProp<RootStackParamList, 'Results'>;
@@ -41,7 +42,6 @@ function toGroceryItem(option: PricedStoreOption): GroceryItem {
     ingredients: option.ingredients ?? null,
     calories: option.calories ?? null,
     nutrition: option.nutrition ?? null,
-    productUrl: option.productUrl ?? null,
     detailQuery: option.detailQuery ?? option.description,
     badges: option.badges ?? [],
     rating: option.rating,
@@ -75,6 +75,7 @@ export default function ResultsScreen() {
   const [saleOnly, setSaleOnly] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const resultsLocationLabel = locationLabel?.trim() || 'your selected location';
+  const { preferences } = usePreferences();
 
   const { isInBucket, add: addToBucket, count: bucketCount } = useBucketContext();
 
@@ -168,7 +169,6 @@ export default function ResultsScreen() {
                 ingredients: item.ingredients || details.ingredients || null,
                 calories: item.calories || details.calories || null,
                 nutrition: item.nutrition || details.nutrition || null,
-                productUrl: item.productUrl || details.productUrl || null,
                 productSize: item.productSize || details.productSize || null,
               };
             }));
@@ -198,9 +198,11 @@ export default function ResultsScreen() {
   }, [results]);
 
   const saleCount = results.filter(item => item.onSale).length;
-  const visibleResults = saleOnly ? results.filter(item => item.onSale) : results;
+  const oneStoreResults = preferences.shopSingleStore ? preferSingleStore(results) : results;
+  const visibleResults = saleOnly ? oneStoreResults.filter(item => item.onSale) : oneStoreResults;
   const visibleSelectedCount = visibleResults.filter(item => selectedIds.has(item.id)).length;
   const selectedCount = selectedIds.size;
+  const preferredStoreName = preferences.shopSingleStore ? oneStoreResults.find(item => item.storeName)?.storeName : null;
 
   function renderCard({ item }: { item: GroceryItem }) {
     const inList = isInBucket(item.id);
@@ -368,6 +370,11 @@ export default function ResultsScreen() {
                 <Text style={[styles.storeHeader, { color: textTer }]}>
                   {saleOnly ? 'Sale items across supermarkets' : 'Priced options across supermarkets'}
                 </Text>
+                {preferences.shopSingleStore && preferredStoreName ? (
+                  <Text style={[styles.preferenceNote, { color: textSec }]}>
+                    Showing one-store results from {preferredStoreName}
+                  </Text>
+                ) : null}
                 <View style={styles.filterRow}>
                   <TouchableOpacity
                     style={[
@@ -503,6 +510,30 @@ const skStyles = StyleSheet.create({
   line: { height: 14, borderRadius: 7 },
 });
 
+function preferSingleStore(items: GroceryItem[]) {
+  const liveItems = items.filter(item => item.isLivePrice && item.storeId);
+  if (liveItems.length === 0) return items;
+
+  const storeScores = new Map<string, { count: number; minPrice: number; minDistance: number }>();
+  liveItems.forEach(item => {
+    const storeId = item.storeId as string;
+    const current = storeScores.get(storeId) ?? { count: 0, minPrice: Number.POSITIVE_INFINITY, minDistance: Number.POSITIVE_INFINITY };
+    current.count += 1;
+    if (Number.isFinite(item.priceValue ?? NaN)) current.minPrice = Math.min(current.minPrice, item.priceValue as number);
+    const distance = parseFloat(item.size || '');
+    if (Number.isFinite(distance)) current.minDistance = Math.min(current.minDistance, distance);
+    storeScores.set(storeId, current);
+  });
+
+  const preferredStoreId = [...storeScores.entries()]
+    .sort(([, a], [, b]) => b.count - a.count || a.minPrice - b.minPrice || a.minDistance - b.minDistance)[0]?.[0];
+
+  if (!preferredStoreId) return items;
+  const storeItems = items.filter(item => item.storeId === preferredStoreId);
+  const infoItems = items.filter(item => !item.isLivePrice);
+  return [...storeItems, ...infoItems];
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   nav: {
@@ -536,6 +567,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 12,
     textTransform: 'uppercase',
+  },
+  preferenceNote: {
+    fontSize: 12,
+    marginTop: -6,
+    marginBottom: 12,
+    lineHeight: 16,
   },
   filterRow: {
     flexDirection: 'row',

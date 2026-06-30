@@ -35,7 +35,6 @@ export default function DetailScreen() {
     ingredients: item.ingredients ?? null,
     calories: item.calories ?? null,
     nutrition: item.nutrition ?? null,
-    productUrl: item.productUrl ?? null,
   }));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,7 +53,6 @@ export default function DetailScreen() {
         ingredients: next.ingredients || item.ingredients || null,
         calories: next.calories || item.calories || null,
         nutrition: next.nutrition || item.nutrition || null,
-        productUrl: next.productUrl || item.productUrl || null,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load product details');

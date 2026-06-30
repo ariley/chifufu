@@ -14,7 +14,6 @@ export interface GroceryItem {
   ingredients?: string | null;
   calories?: string | null;
   nutrition?: ProductNutrition | null;
-  productUrl?: string | null;
   detailQuery?: string;
   badges: string[];
   rating?: number;
@@ -55,7 +54,6 @@ export interface ProductDetails {
   nutrition?: ProductNutrition | null;
   allergens?: string[];
   labels?: string[];
-  productUrl?: string | null;
   source?: string;
 }
 

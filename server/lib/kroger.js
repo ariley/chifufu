@@ -70,14 +70,14 @@ async function searchProducts(query, locationId, limit = 20) {
   const searchLimit = Math.max(limit, 50);
 
   for (const term of buildSearchTerms(query)) {
-    const products = await fetchProductsForTerm(token, term, locationId, searchLimit);
+    const products = await fetchProductsForTerm(token, term, locationId, searchLimit, query);
     if (products.length > 0) return products;
   }
 
   return [];
 }
 
-async function fetchProductsForTerm(token, term, locationId, limit) {
+async function fetchProductsForTerm(token, term, locationId, limit, originalQuery = term) {
   const params = new URLSearchParams({
     'filter.term': term,
     'filter.limit': String(limit),
@@ -126,12 +126,12 @@ async function fetchProductsForTerm(token, term, locationId, limit) {
   .filter(p => p.priceValue != null)
   .sort((a, b) => a.relevanceRank - b.relevanceRank || a.priceValue - b.priceValue);
 
-  return pricedProducts.filter(productMatchesQuery(term));
+  return pricedProducts.filter(productMatchesQuery(term, originalQuery));
 }
 
 module.exports = { findNearestStore, searchProducts };
 
-function productMatchesQuery(query) {
+function productMatchesQuery(query, originalQuery = query) {
   const rawTokens = normalizeForSearch(query)
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
@@ -146,10 +146,17 @@ function productMatchesQuery(query) {
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/\bcreme\b/g, 'cream');
     const normalizedQuery = normalizeForSearch(query);
-    if (/\bwith pulp\b/.test(String(query).toLowerCase()) && /\b(no pulp|pulp free|sans pulpe)\b/.test(productText)) {
+    const normalizedOriginalQuery = normalizeForSearch(originalQuery);
+    if (normalizedOriginalQuery.includes('with pulp') && /\b(no pulp|pulp free|sans pulpe)\b/.test(productText)) {
       return false;
     }
-    if (normalizedQuery === 'milk' && /\b(milk-bone|milk dud|candy|chocolate|cookie|biscuit|dog|snack|bone)\b/.test(productText)) {
+    if (normalizedOriginalQuery === 'milk' && /\b(milk-bone|milk dud|candy|chocolate|cookie|biscuit|dog|snack|bone|kinder|milky)\b/.test(productText)) {
+      return false;
+    }
+    if ((normalizedOriginalQuery === 'egg' || normalizedOriginalQuery === 'eggs') && /\b(candy|chocolate|cadbury|creme)\b/.test(productText)) {
+      return false;
+    }
+    if ((normalizedOriginalQuery === 'carrot' || normalizedOriginalQuery === 'carrots') && /\b(tuna|salad|soup|juice|pouch|smoothie)\b/.test(productText)) {
       return false;
     }
     const rawHaystackTokens = new Set(productText
@@ -157,6 +164,15 @@ function productMatchesQuery(query) {
       .filter(Boolean));
     const haystackTokens = new Set([...rawHaystackTokens]
       .map(token => token.length > 3 && token.endsWith('s') ? token.slice(0, -1) : token));
+    const originalCoreTokens = normalizeForSearch(originalQuery)
+      .split(/[^a-z0-9]+/)
+      .filter(token => token.length > 2 && !GENERIC_PRODUCT_MODIFIERS.has(token))
+      .filter(token => !(normalizedOriginalQuery.includes('with pulp') && token === 'pulp'))
+      .map(singularizeToken);
+
+    if (originalCoreTokens.length > 0 && !originalCoreTokens.every(token => haystackTokens.has(token))) {
+      return false;
+    }
 
     return tokens.every((token, index) => {
       const rawToken = rawTokens[index];
@@ -173,21 +189,56 @@ function buildSearchTerms(query) {
   const tokens = normalizedQuery
     .split(/[^a-z0-9]+/)
     .filter(token => token.length > 2);
-  const terms = [normalizedQuery];
+  const terms = [];
   const coreTokens = tokens.filter(token => !GENERIC_PRODUCT_MODIFIERS.has(token));
+  const tokenSets = [
+    tokens,
+    coreTokens,
+    withoutTerminalPackaging(coreTokens),
+  ].filter(set => set.length > 0);
 
-  if (tokens.length >= 2) {
-    const phrase = tokens.slice(-2).join(' ');
-    terms.push(phrase);
+  tokenSets.forEach(set => {
+    terms.push(set.join(' '));
+    contiguousPhrases(set).forEach(term => terms.push(term));
+    set.forEach(token => terms.push(token, pluralizeToken(token), singularizeToken(token)));
+  });
+
+  if (coreTokens.includes('orange') && coreTokens.includes('juice')) {
+    terms.unshift('orange juice');
   }
 
-  if (coreTokens.length >= 2) {
-    terms.push(coreTokens.join(' '));
-  } else if (coreTokens.length === 1) {
-    terms.push(coreTokens[0]);
-  }
+  return [...new Set(terms.filter(Boolean))].slice(0, 16);
+}
 
-  return [...new Set(terms.filter(Boolean))];
+function contiguousPhrases(tokens) {
+  const phrases = [];
+  for (let size = Math.min(4, tokens.length); size >= 2; size -= 1) {
+    for (let index = 0; index <= tokens.length - size; index += 1) {
+      phrases.push(tokens.slice(index, index + size).join(' '));
+    }
+  }
+  return phrases;
+}
+
+function withoutTerminalPackaging(tokens) {
+  const next = [...tokens];
+  while (next.length > 1 && PRODUCT_PACKAGING_WORDS.has(next[next.length - 1])) {
+    next.pop();
+  }
+  return next;
+}
+
+function singularizeToken(token) {
+  if (token.length > 4 && token.endsWith('ies')) return `${token.slice(0, -3)}y`;
+  if (token.length > 3 && token.endsWith('es')) return token.slice(0, -2);
+  if (token.length > 3 && token.endsWith('s')) return token.slice(0, -1);
+  return token;
+}
+
+function pluralizeToken(token) {
+  if (token.endsWith('y')) return `${token.slice(0, -1)}ies`;
+  if (/(s|x|z|ch|sh)$/.test(token)) return `${token}es`;
+  return `${token}s`;
 }
 
 function productRelevanceRank(query, name, brand, size) {
@@ -218,12 +269,29 @@ const GENERIC_PRODUCT_MODIFIERS = new Set([
   'small',
   'sliced',
   'shredded',
-  'cream',
-  'cheese',
   'whole',
   'low',
   'fat',
   'free',
+]);
+
+const PRODUCT_PACKAGING_WORDS = new Set([
+  'bag',
+  'box',
+  'bottle',
+  'can',
+  'carton',
+  'container',
+  'cup',
+  'cups',
+  'dozen',
+  'jar',
+  'jug',
+  'pack',
+  'package',
+  'pouch',
+  'tin',
+  'tub',
 ]);
 
 function normalizeForSearch(value) {
