@@ -118,6 +118,8 @@ async function assertDistinctProductRows(searchQuery) {
 }
 
 await assertSuggestions('cre', ['cream cheese', 'sour cream']);
+await assertSuggestions('creem', ['cream cheese']);
+await assertSuggestions('yogh', ['yogurt', 'greek yogurt']);
 await assertDistinctProductRows('Norwegian cream cheese');
 await assertDistinctProductRows('Norwegian crème cheese');
 await assertDistinctProductRows('Rye bread');

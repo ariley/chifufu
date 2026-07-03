@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const MiniSearch = require('minisearch');
 const authRoutes = require('./routes/auth');
 const { findNearestStore, searchProducts } = require('./lib/kroger');
 
@@ -21,6 +22,7 @@ const productCandidatesCache = new Map();
 const productSuggestionsCache = new Map();
 const pendingResults = new Map();
 const backgroundRefreshes = new Map();
+let baseSuggestionIndex = null;
 
 function normalizeCachePart(value) {
   return normalizeForSearch(value);
@@ -267,6 +269,52 @@ function mapSuggestion(label, source = 'catalog', brand = null) {
   };
 }
 
+function createProductSearchIndex(documents) {
+  const index = new MiniSearch({
+    fields: ['label', 'brand', 'category', 'aliases'],
+    storeFields: ['id', 'label', 'brand', 'source', 'priority'],
+    processTerm: term => singularizeToken(normalizeForSearch(term)),
+    searchOptions: {
+      boost: { label: 3, aliases: 2, brand: 1.25, category: 0.8 },
+      prefix: true,
+      fuzzy: term => term.length > 4 ? 0.2 : false,
+      combineWith: 'AND',
+    },
+  });
+  index.addAll(documents);
+  return index;
+}
+
+function getBaseSuggestionIndex() {
+  if (!baseSuggestionIndex) {
+    baseSuggestionIndex = createProductSearchIndex(COMMON_PRODUCT_SUGGESTIONS.map((entry, index) => {
+      const product = typeof entry === 'string' ? { label: entry } : entry;
+      const label = cleanText(product.label);
+      return {
+        id: `common-${index}-${normalizeCachePart(label).replace(/[^a-z0-9]+/g, '-')}`,
+        label,
+        brand: cleanText(product.brand) || '',
+        category: cleanText(product.category) || '',
+        aliases: cleanText(product.aliases) || '',
+        source: 'common foods',
+        priority: Number.isFinite(product.priority) ? product.priority : index,
+      };
+    }));
+  }
+  return baseSuggestionIndex;
+}
+
+function searchSuggestionDocuments(query, documents, limit) {
+  const normalized = normalizeCachePart(query);
+  if (!normalized) return [];
+
+  const index = documents ? createProductSearchIndex(documents) : getBaseSuggestionIndex();
+  return index.search(normalized)
+    .sort((a, b) => (a.priority ?? 1000) - (b.priority ?? 1000) || b.score - a.score)
+    .slice(0, limit)
+    .map(result => mapSuggestion(result.label, result.source, result.brand));
+}
+
 function hasRealProductIdentity(product) {
   return Boolean(cleanText(product?.name) && cleanText(product?.brand));
 }
@@ -507,56 +555,56 @@ const STORE_SEARCH_PATTERNS = [
 ];
 
 const COMMON_PRODUCT_SUGGESTIONS = [
-  'cream cheese',
-  'Norwegian cream cheese',
-  'sour cream',
-  'heavy cream',
-  'whipped cream',
-  'coffee creamer',
-  'half and half',
-  'eggs',
-  'organic eggs',
-  'large brown eggs',
-  'milk',
-  'whole milk',
-  'oat milk',
-  'almond milk',
-  'butter',
-  'yogurt',
-  'greek yogurt',
-  'cheddar cheese',
-  'mozzarella cheese',
-  'feta cheese',
-  'parmesan cheese',
-  'rye bread',
-  'sourdough bread',
-  'whole wheat bread',
-  'bagels',
-  'tortillas',
-  'rice',
-  'pasta',
-  'peanut butter',
-  'jam',
-  'orange juice',
-  'apple juice',
-  'coffee',
-  'tea',
-  'bananas',
-  'apples',
-  'avocados',
-  'carrots',
-  'lettuce',
-  'tomatoes',
-  'potatoes',
-  'onions',
-  'chicken breast',
-  'ground beef',
-  'salmon',
-  'tuna',
-  'black beans',
-  'chickpeas',
-  'olive oil',
-  'dark chocolate',
+  { label: 'cream cheese', category: 'dairy cheese spread', aliases: 'soft cheese schmear' },
+  { label: 'Norwegian cream cheese', category: 'dairy cheese spread', aliases: 'snofrisk tine brunost soft cheese' },
+  { label: 'sour cream', category: 'dairy cream', aliases: 'crema cultured cream' },
+  { label: 'heavy cream', category: 'dairy cream', aliases: 'whipping cream heavy whipping cream' },
+  { label: 'whipped cream', category: 'dairy cream dessert topping', aliases: 'whip cream' },
+  { label: 'coffee creamer', category: 'dairy coffee', aliases: 'creamer half and half' },
+  { label: 'half and half', category: 'dairy cream coffee', aliases: 'half-half creamer' },
+  { label: 'eggs', category: 'eggs breakfast protein', aliases: 'egg dozen chicken eggs' },
+  { label: 'organic eggs', category: 'eggs organic breakfast protein', aliases: 'organic egg dozen' },
+  { label: 'large brown eggs', category: 'eggs breakfast protein', aliases: 'brown egg dozen' },
+  { label: 'milk', category: 'dairy milk beverage', aliases: 'cow milk' },
+  { label: 'whole milk', category: 'dairy milk beverage', aliases: 'full fat milk' },
+  { label: 'oat milk', category: 'plant milk beverage', aliases: 'oatmilk non dairy' },
+  { label: 'almond milk', category: 'plant milk beverage', aliases: 'almondmilk non dairy' },
+  { label: 'butter', category: 'dairy butter baking', aliases: 'salted butter unsalted butter' },
+  { label: 'yogurt', category: 'dairy yogurt', aliases: 'yoghurt' },
+  { label: 'greek yogurt', category: 'dairy yogurt', aliases: 'greek yoghurt strained yogurt' },
+  { label: 'cheddar cheese', category: 'dairy cheese', aliases: 'sharp cheddar block cheese sliced cheese' },
+  { label: 'mozzarella cheese', category: 'dairy cheese', aliases: 'shredded mozzarella string cheese' },
+  { label: 'feta cheese', category: 'dairy cheese', aliases: 'sheep cheese brined cheese' },
+  { label: 'parmesan cheese', category: 'dairy cheese', aliases: 'parmigiano grated parmesan' },
+  { label: 'rye bread', category: 'bread bakery', aliases: 'jewish rye pumpernickel' },
+  { label: 'sourdough bread', category: 'bread bakery', aliases: 'sour dough loaf' },
+  { label: 'whole wheat bread', category: 'bread bakery', aliases: 'wheat bread sandwich bread' },
+  { label: 'bagels', category: 'bread bakery breakfast', aliases: 'bagel' },
+  { label: 'tortillas', category: 'bread bakery mexican', aliases: 'flour tortilla corn tortilla wraps' },
+  { label: 'rice', category: 'pantry grain', aliases: 'white rice brown rice jasmine rice basmati rice' },
+  { label: 'pasta', category: 'pantry noodles', aliases: 'spaghetti macaroni penne' },
+  { label: 'peanut butter', category: 'pantry spread', aliases: 'pb nut butter' },
+  { label: 'jam', category: 'pantry spread', aliases: 'jelly preserves fruit spread' },
+  { label: 'orange juice', category: 'beverage juice', aliases: 'oj pulp no pulp' },
+  { label: 'apple juice', category: 'beverage juice', aliases: 'juice box' },
+  { label: 'coffee', category: 'beverage pantry', aliases: 'ground coffee beans espresso' },
+  { label: 'tea', category: 'beverage pantry', aliases: 'black tea green tea herbal tea' },
+  { label: 'bananas', category: 'produce fruit', aliases: 'banana' },
+  { label: 'apples', category: 'produce fruit', aliases: 'apple' },
+  { label: 'avocados', category: 'produce fruit', aliases: 'avocado' },
+  { label: 'carrots', category: 'produce vegetable', aliases: 'carrot baby carrots' },
+  { label: 'lettuce', category: 'produce vegetable greens', aliases: 'romaine iceberg salad greens' },
+  { label: 'tomatoes', category: 'produce vegetable', aliases: 'tomato grape tomatoes cherry tomatoes' },
+  { label: 'potatoes', category: 'produce vegetable', aliases: 'potato russet yukon gold' },
+  { label: 'onions', category: 'produce vegetable', aliases: 'onion yellow onion red onion' },
+  { label: 'chicken breast', category: 'meat poultry protein', aliases: 'boneless chicken' },
+  { label: 'ground beef', category: 'meat beef protein', aliases: 'hamburger mince' },
+  { label: 'salmon', category: 'seafood fish protein', aliases: 'salmon fillet smoked salmon' },
+  { label: 'tuna', category: 'seafood fish protein pantry', aliases: 'canned tuna albacore' },
+  { label: 'black beans', category: 'pantry beans protein', aliases: 'beans canned beans' },
+  { label: 'chickpeas', category: 'pantry beans protein', aliases: 'garbanzo beans' },
+  { label: 'olive oil', category: 'pantry oil cooking', aliases: 'extra virgin olive oil evoo' },
+  { label: 'dark chocolate', category: 'snack candy baking', aliases: 'chocolate bar bittersweet chocolate' },
 ];
 
 async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1200, allowCoreFallback = true, originalSearchQuery = searchQuery) {
@@ -593,7 +641,9 @@ async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1
   }
 
   if (candidates.length > 0) {
-    setCachedProductCandidates(cacheKey, candidates);
+    const rankedCandidates = rankProductCandidates(originalSearchQuery, candidates);
+    setCachedProductCandidates(cacheKey, rankedCandidates);
+    return rankedCandidates;
   }
   if (candidates.length === 0 && allowCoreFallback) {
     const fallbackQuery = buildOpenFoodFactsTerms(searchQuery).find(term => normalizeCachePart(term) !== normalizeCachePart(searchQuery));
@@ -613,7 +663,6 @@ async function suggestProducts(searchQuery, limit = 10, timeoutMs = 1200) {
   const cached = getCachedProductSuggestions(cacheKey);
   if (cached) return cached;
 
-  const queryTokens = normalizeSearchTokens(normalized);
   const suggestions = [];
   const seen = new Set();
   const add = (suggestion) => {
@@ -625,21 +674,30 @@ async function suggestProducts(searchQuery, limit = 10, timeoutMs = 1200) {
     suggestions.push({ ...suggestion, label });
   };
 
-  COMMON_PRODUCT_SUGGESTIONS
-    .filter(label => suggestionMatches(label, normalized, queryTokens))
-    .slice(0, limit)
-    .forEach(label => add(mapSuggestion(label, 'common foods')));
+  searchSuggestionDocuments(normalized, null, limit)
+    .forEach(add);
 
   if (suggestions.length < 3 && normalized.length >= 5) {
     try {
       const data = await fetchOpenFoodFactsSearch(normalized, Math.max(16, limit * 2), timeoutMs);
-      for (const product of data.products ?? []) {
-        const details = mapOpenFoodFactsProduct(product, normalized);
-        const label = [details.brand, details.name].filter(Boolean).join(' ');
-        if (!label || !suggestionMatches(label, normalized, queryTokens)) continue;
-        add(mapSuggestion(label, 'Open Food Facts', details.brand));
-        if (suggestions.length >= limit) break;
-      }
+      const catalogDocs = (data.products ?? [])
+        .map((product, index) => {
+          const details = mapOpenFoodFactsProduct(product, normalized);
+          const label = [details.brand, details.name].filter(Boolean).join(' ');
+          if (!label || !details.name) return null;
+          return {
+            id: `off-${index}-${normalizeCachePart(label).replace(/[^a-z0-9]+/g, '-')}`,
+            label,
+            brand: details.brand || '',
+            category: details.categoryText || '',
+            aliases: [details.productSize, details.labels?.join(' ')].filter(Boolean).join(' '),
+            source: 'Open Food Facts',
+            priority: 100 + index,
+          };
+        })
+        .filter(Boolean);
+      searchSuggestionDocuments(normalized, catalogDocs, Math.max(0, limit - suggestions.length))
+        .forEach(add);
     } catch (err) {
       if (err.message !== 'timeout') {
         console.error('product suggestions fetch error:', err.message);
@@ -652,11 +710,26 @@ async function suggestProducts(searchQuery, limit = 10, timeoutMs = 1200) {
   return items;
 }
 
-function suggestionMatches(label, normalizedQuery, queryTokens) {
-  const text = normalizeCachePart(label);
-  if (text.includes(normalizedQuery)) return true;
-  const tokens = normalizeSearchTokens(text);
-  return queryTokens.every(token => tokens.some(candidate => candidate.startsWith(token)));
+function rankProductCandidates(searchQuery, candidates) {
+  if (!Array.isArray(candidates) || candidates.length < 2) return candidates;
+
+  const docs = candidates.map((product, index) => ({
+    id: String(index),
+    label: [product.brand, product.name].filter(Boolean).join(' '),
+    brand: product.brand || '',
+    category: product.categoryText || '',
+    aliases: [product.productSize, product.labels?.join(' ')].filter(Boolean).join(' '),
+    source: product.source || '',
+    priority: index,
+  }));
+  const index = createProductSearchIndex(docs);
+  const scores = new Map(index.search(productDetailQuery(searchQuery)).map(result => [Number(result.id), result.score]));
+  if (scores.size === 0) return candidates;
+
+  return candidates
+    .map((product, index) => ({ product, index, score: scores.get(index) ?? 0 }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map(entry => entry.product);
 }
 
 async function fetchOpenFoodFactsSearch(term, limit, timeoutMs) {
