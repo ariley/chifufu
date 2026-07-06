@@ -45,6 +45,15 @@ async function getSuggestions(query) {
   return response.json();
 }
 
+async function getBarcodeProduct(code) {
+  const response = await fetch(`${API}/api/product/barcode/${encodeURIComponent(code)}`);
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`barcode failed ${response.status}: ${body}`);
+  }
+  return response.json();
+}
+
 function uniqueCount(items, pick) {
   return new Set(items.map(pick).filter(Boolean)).size;
 }
@@ -120,6 +129,16 @@ async function assertDistinctProductRows(searchQuery) {
 await assertSuggestions('cre', ['cream cheese', 'sour cream']);
 await assertSuggestions('creem', ['cream cheese']);
 await assertSuggestions('yogh', ['yogurt', 'greek yogurt']);
+const barcodeProduct = await getBarcodeProduct('737628064502');
+if (!barcodeProduct.code || !barcodeProduct.name || !barcodeProduct.brand || !barcodeProduct.imageUrl || !barcodeProduct.ingredients) {
+  throw new Error('Barcode lookup: expected code, product identity, image, and ingredients');
+}
+console.log(JSON.stringify({
+  barcode: barcodeProduct.code,
+  product: [barcodeProduct.brand, barcodeProduct.name].filter(Boolean).join(' '),
+  hasImage: Boolean(barcodeProduct.imageUrl),
+  hasIngredients: Boolean(barcodeProduct.ingredients),
+}, null, 2));
 await assertDistinctProductRows('Norwegian cream cheese');
 await assertDistinctProductRows('Norwegian crème cheese');
 await assertDistinctProductRows('Rye bread');

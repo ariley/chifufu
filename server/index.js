@@ -246,6 +246,7 @@ function mapOpenFoodFactsProduct(product, query) {
 
   return {
     query,
+    code: cleanText(product?.code) || cleanText(product?._id) || null,
     name: withoutBrandPrefix(product?.product_name || product?.generic_name || '', product?.brands),
     brand: cleanText(product?.brands) || null,
     productSize: cleanText(product?.quantity) || cleanText(product?.serving_size) || null,
@@ -826,6 +827,63 @@ async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
   }
 }
 
+async function fetchProductByBarcode(barcode, timeoutMs = 2500) {
+  const code = cleanText(barcode).replace(/\D/g, '');
+  if (code.length < 6) return null;
+
+  const cacheKey = `barcode:${code}`;
+  const cached = getCachedProductDetails(cacheKey);
+  if (cached) return cached;
+
+  const params = new URLSearchParams({
+    fields: [
+      'code',
+      'product_name',
+      'generic_name',
+      'brands',
+      'quantity',
+      'serving_size',
+      'image_front_url',
+      'image_url',
+      'ingredients_text_en',
+      'ingredients_text',
+      'nutriments',
+      'allergens_tags',
+      'labels_tags',
+      'categories_tags',
+      'url',
+      'nutriscore_grade',
+    ].join(','),
+  });
+  const urls = [
+    `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?${params}`,
+    `https://us.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?${params}`,
+  ];
+
+  for (const url of urls) {
+    try {
+      const resp = await withTimeout(fetch(url, {
+        headers: { 'User-Agent': 'Chifufu/1.0 (contact@chifufu.com)' },
+      }), timeoutMs);
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      if (data.status === 0 || !data.product) continue;
+      const details = mapOpenFoodFactsProduct(data.product, code);
+      if (isUsableProductCandidate(details)) {
+        setCachedProductDetails(cacheKey, details);
+        setCachedProductDetails(normalizeCachePart([details.brand, details.name].filter(Boolean).join(' ')), details);
+        return details;
+      }
+    } catch (err) {
+      if (err.message !== 'timeout') {
+        console.error('barcode details fetch error:', err.message);
+      }
+    }
+  }
+
+  return null;
+}
+
 async function fetchRelaxedProductDetails(query, timeoutMs) {
   const terms = buildOpenFoodFactsTerms(query);
   const deadline = Date.now() + timeoutMs;
@@ -1258,6 +1316,14 @@ app.get('/api/product/details', async (req, res) => {
   const details = await fetchProductDetails(String(q), 3500);
   if (!details) {
     return res.status(404).json({ error: 'Product details not found' });
+  }
+  res.json(details);
+});
+
+app.get('/api/product/barcode/:code', async (req, res) => {
+  const details = await fetchProductByBarcode(req.params.code, 3500);
+  if (!details) {
+    return res.status(404).json({ error: 'Barcode product not found' });
   }
   res.json(details);
 });

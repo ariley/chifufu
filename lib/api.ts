@@ -64,6 +64,7 @@ export interface PricedStoreOption {
 
 export interface ProductDetailsResponse {
   query: string;
+  code?: string | null;
   name: string;
   brand?: string | null;
   productSize?: string | null;
@@ -125,6 +126,22 @@ export async function fetchPricedGroceryOptions(
 
 export async function fetchProductDetails(query: string) {
   const res = await fetch(`${BASE}/api/product/details?q=${encodeURIComponent(query)}`);
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(error.error || `Request failed ${res.status}`);
+  }
+
+  return res.json() as Promise<ProductDetailsResponse>;
+}
+
+export async function fetchProductByBarcode(code: string) {
+  const normalized = code.replace(/\D/g, '');
+  if (normalized.length < 6) {
+    throw new Error('Scan a grocery barcode');
+  }
+
+  const res = await fetch(`${BASE}/api/product/barcode/${encodeURIComponent(normalized)}`);
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));

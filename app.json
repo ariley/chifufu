@@ -3,7 +3,7 @@
     "name": "Chifufu",
     "slug": "chifufu",
     "scheme": "chifufu",
-    "version": "1.1.3",
+    "version": "1.1.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -44,6 +44,12 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "Allow Cheap Eats to use your location to find food near you."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Chifufu to scan grocery barcodes."
         }
       ],
       "expo-status-bar",

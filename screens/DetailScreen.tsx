@@ -15,6 +15,7 @@ import { StatusBar } from 'expo-status-bar';
 import { useThemeContext } from '../contexts/ThemeContext';
 import { fetchProductDetails } from '../lib/api';
 import { ProductDetails, RootStackParamList } from '../types';
+import { useSavedContext } from '../App';
 
 type Route = RouteProp<RootStackParamList, 'Detail'>;
 
@@ -25,6 +26,7 @@ export default function DetailScreen() {
   const scheme = useColorScheme();
   const dark = scheme === 'dark';
   const { bg, bgSec, text, textSec, textTer, border, accent } = useThemeContext();
+  const { isSaved, toggle } = useSavedContext();
 
   const [details, setDetails] = useState<ProductDetails | null>(() => ({
     query: item.detailQuery || item.name,
@@ -91,6 +93,20 @@ export default function DetailScreen() {
     ['Labels', details?.labels?.join(', ')],
     ['Source', details?.source],
   ].filter(([, value]) => !!value);
+  const savedItem = {
+    ...item,
+    upc: details?.code || item.upc,
+    name: details?.name || item.name,
+    brand: details?.brand || item.brand,
+    productSize: details?.productSize || item.productSize || null,
+    imageUrl: details?.imageUrl || item.imageUrl,
+    ingredients: details?.ingredients || item.ingredients || null,
+    calories: details?.calories || item.calories || null,
+    nutrition: details?.nutrition || item.nutrition || null,
+    detailQuery: [details?.brand, details?.name].filter(Boolean).join(' ') || item.detailQuery || item.name,
+    source: details?.source || item.source,
+  };
+  const saved = isSaved(savedItem);
 
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: bg }]}>
@@ -100,7 +116,15 @@ export default function DetailScreen() {
           <Text style={[styles.backChevron, { color: accent }]}>‹</Text>
         </TouchableOpacity>
         <Text style={[styles.navTitle, { color: text }]}>Product Details</Text>
-        <View style={{ width: 28 }} />
+        <TouchableOpacity
+          onPress={() => toggle(savedItem)}
+          accessibilityRole="button"
+          accessibilityLabel={saved ? 'Remove from My Products' : 'Save to My Products'}
+        >
+          <Text style={[styles.saveIcon, { color: saved ? '#FF3B30' : accent }]}>
+            {saved ? '♥' : '♡'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -120,6 +144,16 @@ export default function DetailScreen() {
         <Text style={[styles.storeLine, { color: textTer }]}>
           {item.storeName ? `${item.storeName} · ` : ''}{item.price ?? item.source ?? 'Product information'}
         </Text>
+        <TouchableOpacity
+          style={[styles.saveButton, { borderColor: saved ? '#FF3B30' : border, backgroundColor: saved ? 'rgba(255,59,48,0.08)' : bgSec }]}
+          onPress={() => toggle(savedItem)}
+          accessibilityRole="button"
+          accessibilityLabel={saved ? 'Remove from My Products' : 'Save to My Products'}
+        >
+          <Text style={[styles.saveButtonText, { color: saved ? '#FF3B30' : accent }]}>
+            {saved ? '♥ Saved to My Products' : '♡ Save to My Products'}
+          </Text>
+        </TouchableOpacity>
 
         {loading && (
           <View style={styles.loadingRow}>
@@ -191,6 +225,7 @@ const styles = StyleSheet.create({
   },
   backChevron: { fontSize: 28, lineHeight: 32, marginRight: 8 },
   navTitle: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '500' },
+  saveIcon: { width: 28, textAlign: 'right', fontSize: 22, fontWeight: '700' },
   content: { padding: 20, paddingBottom: 36 },
   hero: {
     height: 210,
@@ -213,6 +248,15 @@ const styles = StyleSheet.create({
   title: { fontSize: 24, fontWeight: '700', marginBottom: 4 },
   subtitle: { fontSize: 15, marginBottom: 4 },
   storeLine: { fontSize: 13, marginBottom: 16 },
+  saveButton: {
+    height: 42,
+    borderRadius: 10,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  saveButtonText: { fontSize: 14, fontWeight: '700' },
   loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
   loadingText: { fontSize: 13 },
   notice: {

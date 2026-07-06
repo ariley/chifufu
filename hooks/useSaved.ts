@@ -4,6 +4,19 @@ import { GroceryItem } from '../types';
 
 const STORAGE_KEY = 'cheapEats:saved';
 
+function savedKey(item: GroceryItem) {
+  return [
+    item.upc,
+    item.detailQuery,
+    item.brand,
+    item.name,
+  ]
+    .filter(Boolean)
+    .join('|')
+    .trim()
+    .toLowerCase() || item.id;
+}
+
 export function useSaved() {
   const [saved, setSaved] = useState<GroceryItem[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -22,19 +35,65 @@ export function useSaved() {
   }, []);
 
   const isSaved = useCallback(
-    (id: string) => saved.some((s) => s.id === id),
+    (idOrItem: string | GroceryItem) => {
+      const id = typeof idOrItem === 'string' ? idOrItem : idOrItem.id;
+      const key = typeof idOrItem === 'string' ? idOrItem : savedKey(idOrItem);
+      return saved.some((s) => s.id === id || savedKey(s) === key);
+    },
     [saved],
   );
 
   const toggle = useCallback(
     (item: GroceryItem) => {
-      persist(
-        isSaved(item.id)
-          ? saved.filter((s) => s.id !== item.id)
-          : [item, ...saved],
-      );
+      const key = savedKey(item);
+      const existing = saved.find((s) => savedKey(s) === key || s.id === item.id);
+      if (existing) {
+        persist(saved.filter((s) => savedKey(s) !== key && s.id !== item.id));
+        return;
+      }
+
+      persist([
+        {
+          ...item,
+          savedAt: Date.now(),
+          lastSeenAt: Date.now(),
+          lookupCount: 1,
+        },
+        ...saved,
+      ]);
     },
-    [saved, isSaved, persist],
+    [saved, persist],
+  );
+
+  const remember = useCallback(
+    (item: GroceryItem) => {
+      const key = savedKey(item);
+      const existing = saved.find((s) => savedKey(s) === key || s.id === item.id);
+      if (existing) {
+        persist([
+          {
+            ...existing,
+            ...item,
+            savedAt: existing.savedAt ?? Date.now(),
+            lastSeenAt: Date.now(),
+            lookupCount: (existing.lookupCount ?? 1) + 1,
+          },
+          ...saved.filter((s) => savedKey(s) !== key && s.id !== item.id),
+        ]);
+        return;
+      }
+
+      persist([
+        {
+          ...item,
+          savedAt: Date.now(),
+          lastSeenAt: Date.now(),
+          lookupCount: 1,
+        },
+        ...saved,
+      ]);
+    },
+    [saved, persist],
   );
 
   const remove = useCallback(
@@ -42,5 +101,5 @@ export function useSaved() {
     [saved, persist],
   );
 
-  return { saved, isSaved, toggle, remove, loaded };
+  return { saved, isSaved, toggle, remember, remove, loaded };
 }

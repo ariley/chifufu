@@ -17,7 +17,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { GroceryItem, RootStackParamList } from '../types';
 import { fetchPricedGroceryOptions, fetchProductDetails, PricedStoreOption } from '../lib/api';
-import { useBucketContext } from '../App';
+import { useBucketContext, useSavedContext } from '../App';
 import { usePreferences } from '../hooks/usePreferences';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Results'>;
@@ -80,6 +80,7 @@ export default function ResultsScreen() {
   const { preferences } = usePreferences();
 
   const { isInBucket, add: addToBucket, count: bucketCount } = useBucketContext();
+  const { isSaved, toggle: toggleSaved } = useSavedContext();
 
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -216,6 +217,7 @@ export default function ResultsScreen() {
 
   function renderCard({ item }: { item: GroceryItem }) {
     const inList = isInBucket(item.id);
+    const saved = isSaved(item);
     const selected = selectedIds.has(item.id);
     return (
       <TouchableOpacity
@@ -314,6 +316,23 @@ export default function ResultsScreen() {
             >
               <Text style={[styles.addBtnText, { color: inList ? accentLight : textSec }]}>
                 {inList ? '✓ In list' : '+ Add to list'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.saveBtn,
+                { borderColor: saved ? '#FF3B30' : border },
+                saved && { backgroundColor: 'rgba(255,59,48,0.08)' },
+              ]}
+              onPress={(event) => {
+                event.stopPropagation();
+                toggleSaved(item);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={saved ? 'Saved to My Products' : 'Save to My Products'}
+            >
+              <Text style={[styles.addBtnText, { color: saved ? '#FF3B30' : textSec }]}>
+                {saved ? '♥ Saved' : '♡ Save'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -803,6 +822,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     alignItems: 'center',
     alignSelf: 'flex-start',
+  },
+  saveBtn: {
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginTop: 8,
   },
   addBtnText: { fontSize: 13, fontWeight: '500' },
   errorWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 8 },

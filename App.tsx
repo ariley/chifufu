@@ -10,6 +10,8 @@ import AuthScreen from './screens/AuthScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import DetailScreen from './screens/DetailScreen';
+import BarcodeScannerScreen from './screens/BarcodeScannerScreen';
+import SavedScreen from './screens/SavedScreen';
 import { useSaved } from './hooks/useSaved';
 import { useBucket } from './hooks/useBucket';
 import { useSavedRoutes, SavedRoute } from './hooks/useSavedRoutes';
@@ -23,13 +25,14 @@ const navigationRef = createNavigationContainerRef<RootStackParamList>();
 // ── Saved context ──────────────────────────────────────────────
 interface SavedContextValue {
   saved: GroceryItem[];
-  isSaved: (id: string) => boolean;
+  isSaved: (idOrItem: string | GroceryItem) => boolean;
   toggle: (item: GroceryItem) => void;
+  remember: (item: GroceryItem) => void;
   remove: (id: string) => void;
   loaded: boolean;
 }
 export const SavedContext = createContext<SavedContextValue>({
-  saved: [], isSaved: () => false, toggle: () => {}, remove: () => {}, loaded: false,
+  saved: [], isSaved: () => false, toggle: () => {}, remember: () => {}, remove: () => {}, loaded: false,
 });
 export function useSavedContext() { return useContext(SavedContext); }
 
@@ -130,6 +133,8 @@ export default function App() {
                 <Stack.Screen name="Home" component={HomeScreen} />
                 <Stack.Screen name="Results" component={ResultsScreen} />
                 <Stack.Screen name="Detail" component={DetailScreen} />
+                <Stack.Screen name="Scan" component={BarcodeScannerScreen} />
+                <Stack.Screen name="Saved" component={SavedScreen} />
                 <Stack.Screen name="Bucket" component={BucketScreen} />
                 <Stack.Screen name="Settings" component={SettingsScreen} />
                 <Stack.Screen name="Auth" component={AuthScreen} />

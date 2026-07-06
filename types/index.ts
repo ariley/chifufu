@@ -19,6 +19,9 @@ export interface GroceryItem {
   rating?: number;
   source?: string;
   isLivePrice?: boolean;
+  savedAt?: number;
+  lastSeenAt?: number;
+  lookupCount?: number;
   // store context (added client-side)
   storeName?: string;
   storeId?: string;
@@ -45,6 +48,7 @@ export interface ProductNutrition {
 
 export interface ProductDetails {
   query: string;
+  code?: string | null;
   name: string;
   brand?: string | null;
   productSize?: string | null;
@@ -76,6 +80,8 @@ export type RootStackParamList = {
   Home: undefined;
   Results: { query: string; lat?: number; lng?: number; locationLabel?: string };
   Detail: { item: GroceryItem };
+  Scan: undefined;
+  Saved: undefined;
   Bucket: undefined;
   Settings: undefined;
   Auth: { verified?: boolean; email?: string } | undefined;

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Platform,
@@ -17,7 +17,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
 import { RootStackParamList } from '../types';
 import { fetchProductSuggestions, ProductSuggestion } from '../lib/api';
-import { useBucketContext } from '../App';
+import { useBucketContext, useSavedContext } from '../App';
 import { useSearchHistory } from '../hooks/useSearchHistory';
 import { SavedLocation, useSavedLocations } from '../hooks/useSavedLocations';
 import { useThemeContext } from '../contexts/ThemeContext';
@@ -42,6 +42,7 @@ export default function HomeScreen() {
   const { bg, bgSec, text, textSec, textTer, border, accent, accentLight } = useThemeContext();
   const { isAuthenticated } = useAuth();
   const { count: bucketCount } = useBucketContext();
+  const { saved } = useSavedContext();
   const [location, setLocation] = useState('');
   const [gpsCoords, setGpsCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [manualLocation, setManualLocation] = useState(false);
@@ -54,6 +55,32 @@ export default function HomeScreen() {
   const suggestionSeq = useRef(0);
   const { history, push: pushHistory, remove: removeHistory } = useSearchHistory();
   const { locations: savedLocations, save: saveLocation, remove: removeLocation } = useSavedLocations();
+  const savedProductSuggestions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (q.length < 2) return [];
+
+    return saved
+      .map((item) => ({
+        id: `saved-${item.id}`,
+        label: [item.brand, item.name].filter(Boolean).join(' ') || item.name,
+        brand: item.brand || null,
+        source: 'My Products',
+      }))
+      .filter((suggestion) => suggestion.label.toLowerCase().includes(q))
+      .slice(0, 4);
+  }, [saved, searchQuery]);
+  const visibleSuggestions = useMemo(() => {
+    const seen = new Set<string>();
+    return [...savedProductSuggestions, ...suggestions]
+      .filter((suggestion) => {
+        const key = suggestion.label.trim().toLowerCase();
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 10);
+  }, [savedProductSuggestions, suggestions]);
+  const recentSavedProducts = saved.slice(0, 8);
 
   useEffect(() => {
     detectLocation();
@@ -257,6 +284,14 @@ export default function HomeScreen() {
                 )}
               </TouchableOpacity>
               <TouchableOpacity
+                onPress={() => navigation.navigate('Saved')}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                accessibilityLabel="My Products"
+                accessibilityRole="button"
+              >
+                <Text style={[styles.iconBtn, { color: textTer }]}>♡</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 onPress={() => navigation.navigate(isAuthenticated ? 'Profile' : 'Auth')}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 accessibilityLabel={isAuthenticated ? 'View profile' : 'Sign in'}
@@ -365,6 +400,14 @@ export default function HomeScreen() {
             returnKeyType="search"
             onSubmitEditing={() => handleSearch(searchQuery)}
           />
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Scan')}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Scan barcode"
+          >
+            <Text style={[styles.scanIcon, { color: accent }]}>▣</Text>
+          </TouchableOpacity>
           {searchQuery.length > 0 && (
             <TouchableOpacity
               onPress={() => setSearchQuery('')}
@@ -375,14 +418,14 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {(suggestions.length > 0 || suggestionsLoading) && (
+        {(visibleSuggestions.length > 0 || suggestionsLoading) && (
           <View style={styles.section}>
             <Text style={[styles.sectionLabel, { color: textTer }]}>SUGGESTIONS</Text>
             <View style={[styles.suggestionPanel, { backgroundColor: bgSec, borderColor: border }]}>
-              {suggestionsLoading && suggestions.length === 0 ? (
+              {suggestionsLoading && visibleSuggestions.length === 0 ? (
                 <Text style={[styles.suggestionMeta, { color: textTer }]}>Finding products...</Text>
               ) : null}
-              {suggestions.map((suggestion) => (
+              {visibleSuggestions.map((suggestion) => (
                 <TouchableOpacity
                   key={suggestion.id}
                   style={[styles.suggestionRow, { borderBottomColor: border }]}
@@ -401,6 +444,43 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+          </View>
+        )}
+
+        {recentSavedProducts.length > 0 && searchQuery.trim().length < 2 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionLabel, { color: textTer }]}>MY PRODUCTS</Text>
+              <TouchableOpacity
+                onPress={() => navigation.navigate('Saved')}
+                accessibilityRole="button"
+                accessibilityLabel="View saved products"
+              >
+                <Text style={[styles.clearBtn, { color: accent }]}>View all</Text>
+              </TouchableOpacity>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.recentChips}
+            >
+              {recentSavedProducts.map((item) => {
+                const label = [item.brand, item.name].filter(Boolean).join(' ') || item.name;
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[styles.recentChip, { backgroundColor: bgSec, borderColor: border }]}
+                    onPress={() => handleSearch(label)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Search ${label}`}
+                  >
+                    <Text style={[styles.recentChipText, { color: textSec }]} numberOfLines={1}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           </View>
         )}
 
@@ -530,6 +610,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   searchIcon: { fontSize: 16 },
+  scanIcon: { fontSize: 19, fontWeight: '700' },
   searchInput: { flex: 1, fontSize: 15 },
   suggestionPanel: {
     borderWidth: 0.5,
