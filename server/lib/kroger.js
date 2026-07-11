@@ -147,7 +147,11 @@ function productMatchesQuery(query, originalQuery = query) {
       .replace(/\bcreme\b/g, 'cream');
     const normalizedQuery = normalizeForSearch(query);
     const normalizedOriginalQuery = normalizeForSearch(originalQuery);
+    const requiredDescriptors = getRequiredDescriptorTokens(normalizedOriginalQuery);
     if (normalizedOriginalQuery.includes('with pulp') && /\b(no pulp|pulp free|sans pulpe)\b/.test(productText)) {
+      return false;
+    }
+    if (requiredDescriptors.length > 0 && !requiredDescriptors.every(token => productHasDescriptor(productText, token))) {
       return false;
     }
     if (normalizedOriginalQuery === 'milk' && /\b(milk-bone|milk dud|candy|chocolate|cookie|biscuit|dog|snack|bone|kinder|milky)\b/.test(productText)) {
@@ -167,6 +171,7 @@ function productMatchesQuery(query, originalQuery = query) {
     const originalCoreTokens = normalizeForSearch(originalQuery)
       .split(/[^a-z0-9]+/)
       .filter(token => token.length > 2 && !GENERIC_PRODUCT_MODIFIERS.has(token))
+      .filter(token => !requiredDescriptors.includes(token))
       .filter(token => !(normalizedOriginalQuery.includes('with pulp') && token === 'pulp'))
       .map(singularizeToken);
 
@@ -190,6 +195,18 @@ function buildSearchTerms(query) {
     .split(/[^a-z0-9]+/)
     .filter(token => token.length > 2);
   const terms = [];
+  const requiredDescriptors = getRequiredDescriptorTokens(normalizedQuery);
+
+  if (requiredDescriptors.length > 0) {
+    terms.push(normalizedQuery);
+    requiredDescriptors.forEach(token => {
+      const aliases = STRICT_DESCRIPTOR_ALIASES[token] ?? [];
+      aliases.forEach(alias => terms.push(alias));
+      contiguousPhrases(tokens).filter(term => term.includes(token)).forEach(term => terms.push(term));
+    });
+    return [...new Set(terms.filter(Boolean))].slice(0, 10);
+  }
+
   const coreTokens = tokens.filter(token => !GENERIC_PRODUCT_MODIFIERS.has(token));
   const tokenSets = [
     tokens,
@@ -263,7 +280,6 @@ function productRelevanceRank(query, name, brand, size) {
 
 const GENERIC_PRODUCT_MODIFIERS = new Set([
   'italian',
-  'norwegian',
   'style',
   'kroger',
   'private',
@@ -282,6 +298,21 @@ const GENERIC_PRODUCT_MODIFIERS = new Set([
   'fat',
   'free',
 ]);
+
+const STRICT_DESCRIPTOR_ALIASES = {
+  norwegian: ['snofrisk', 'sno frisk', 'tine snofrisk', 'tine brunost', 'brunost'],
+};
+
+function getRequiredDescriptorTokens(query) {
+  const tokenSet = new Set(normalizeForSearch(query).split(/[^a-z0-9]+/).filter(Boolean));
+  return Object.keys(STRICT_DESCRIPTOR_ALIASES).filter(token => tokenSet.has(token));
+}
+
+function productHasDescriptor(productText, token) {
+  if (new RegExp(`\\b${token}\\b`).test(productText)) return true;
+  return (STRICT_DESCRIPTOR_ALIASES[token] ?? [])
+    .some(alias => new RegExp(`\\b${normalizeForSearch(alias).replace(/\s+/g, '\\s+')}\\b`).test(productText));
+}
 
 const PRODUCT_PACKAGING_WORDS = new Set([
   'bag',

@@ -12,7 +12,7 @@ app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const RESULTS_CACHE_VERSION = 'products-v10-orange-juice-relevance';
+const RESULTS_CACHE_VERSION = 'products-v11-strict-origin-descriptors';
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
 const PRODUCT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const SUGGESTION_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -365,6 +365,10 @@ function isRelevantProductCandidate(product, searchQuery, originalSearchQuery = 
   if (!query || !text) return false;
   if (originalQuery.includes('with pulp') && /\b(no pulp|pulp free|sans pulpe)\b/.test(rawText)) return false;
   if (isObviousCatalogMismatch(originalQuery, productIdentityText(product))) return false;
+  const requiredDescriptors = getRequiredDescriptorTokens(originalQuery);
+  if (requiredDescriptors.length > 0 && !requiredDescriptors.every(token => productHasDescriptor(rawText, token))) {
+    return false;
+  }
 
   if (query.includes('israeli') && query.includes('feta')) {
     return tokenMatches(identityTokens, 'israeli') && tokenMatches(identityTokens, 'feta');
@@ -375,6 +379,7 @@ function isRelevantProductCandidate(product, searchQuery, originalSearchQuery = 
     .filter(token => token.length > 2 && !['with', 'and', 'the', 'for'].includes(token));
   const originalCoreTokens = normalizeSearchTokens(originalQuery)
     .filter(token => token.length > 2 && !PRODUCT_SEARCH_MODIFIERS.has(token))
+    .filter(token => !requiredDescriptors.includes(token))
     .filter(token => !(originalQuery.includes('with pulp') && token === 'pulp'));
   if (originalCoreTokens.length > 0 && !originalCoreTokens.every(token => tokenMatches(identityTokens, token))) {
     return false;
@@ -434,6 +439,20 @@ function buildOpenFoodFactsTerms(searchQuery) {
   const normalized = normalizeForSearch(query);
   const terms = [];
   const tokens = normalized.split(/[^a-z0-9]+/).filter(token => token.length > 2);
+  const requiredDescriptors = getRequiredDescriptorTokens(normalized);
+
+  if (requiredDescriptors.length > 0) {
+    terms.push(normalized);
+    requiredDescriptors.forEach(token => {
+      const aliases = STRICT_DESCRIPTOR_ALIASES[token] ?? [];
+      aliases.forEach(alias => terms.push(alias));
+      contiguousPhrases(tokens).filter(term => term.includes(token)).forEach(term => terms.push(term));
+    });
+    return [...new Set(terms.map(cleanText).filter(Boolean))]
+      .filter(term => term.length > 1)
+      .slice(0, 10);
+  }
+
   const coreTokens = tokens.filter(token => !PRODUCT_SEARCH_MODIFIERS.has(token));
   const tokenSets = [
     tokens,
@@ -496,7 +515,6 @@ function pluralizeToken(token) {
 }
 
 const PRODUCT_SEARCH_MODIFIERS = new Set([
-  'norwegian',
   'italian',
   'israeli',
   'style',
@@ -514,6 +532,21 @@ const PRODUCT_SEARCH_MODIFIERS = new Set([
   'sliced',
   'shredded',
 ]);
+
+const STRICT_DESCRIPTOR_ALIASES = {
+  norwegian: ['snofrisk', 'sno frisk', 'tine snofrisk', 'tine brunost', 'brunost'],
+};
+
+function getRequiredDescriptorTokens(query) {
+  const tokenSet = new Set(normalizeForSearch(query).split(/[^a-z0-9]+/).filter(Boolean));
+  return Object.keys(STRICT_DESCRIPTOR_ALIASES).filter(token => tokenSet.has(token));
+}
+
+function productHasDescriptor(productText, token) {
+  if (new RegExp(`\\b${token}\\b`).test(productText)) return true;
+  return (STRICT_DESCRIPTOR_ALIASES[token] ?? [])
+    .some(alias => new RegExp(`\\b${normalizeForSearch(alias).replace(/\s+/g, '\\s+')}\\b`).test(productText));
+}
 
 const PRODUCT_PACKAGING_WORDS = new Set([
   'bag',
@@ -737,6 +770,7 @@ function rankProductCandidates(searchQuery, candidates) {
 }
 
 async function fetchOpenFoodFactsSearch(term, limit, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
   const cgiParams = new URLSearchParams({
     search_terms: term,
     search_simple: '1',
@@ -778,10 +812,12 @@ async function fetchOpenFoodFactsSearch(term, limit, timeoutMs) {
   const products = [];
 
   for (const url of urls) {
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) break;
     try {
       const resp = await withTimeout(fetch(url, {
         headers: { 'User-Agent': 'Chifufu/1.0 (contact@chifufu.com)' },
-      }), timeoutMs);
+      }), Math.max(250, remainingMs));
       if (!resp.ok) {
         lastError = new Error(`Open Food Facts ${new URL(url).host} ${resp.status}`);
         continue;
@@ -817,7 +853,7 @@ async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
       return details;
     }
     const relaxedDetails = await fetchRelaxedProductDetails(query, timeoutMs);
-    if (relaxedDetails) {
+    if (relaxedDetails && isRelevantProductCandidate(relaxedDetails, query, query)) {
       setCachedProductDetails(cacheKey, relaxedDetails);
       return relaxedDetails;
     }
@@ -1369,12 +1405,13 @@ app.post('/api/results', async (req, res) => {
 
   res.set('X-Chifufu-Cache', 'MISS');
   const productQuery = productDetailQuery(searchQuery);
+  const isStrictDescriptorSearch = getRequiredDescriptorTokens(productQuery).length > 0;
   const generation = Promise.all([
     searchKrogerPricedResults({ searchQuery: productQuery, lat, lng, limit: 10 }).catch(err => {
       console.error('priced provider error:', err.message);
       return [];
     }),
-    searchOpenFoodFactsProducts(productQuery, 12, 4500),
+    searchOpenFoodFactsProducts(productQuery, 12, isStrictDescriptorSearch ? 1800 : 4500),
     resolvePlaces({ location, category: 'grocery', lat, lng }).catch(err => {
       console.error('nearby grocery store error:', err.message);
       return [];
@@ -1390,7 +1427,7 @@ app.post('/api/results', async (req, res) => {
     const catalogItems = buildCatalogResults({ searchQuery, productCandidates })
       .filter(item => !pricedDetailQueries.has(normalizeCachePart(item.detailQuery)));
     let items = [...pricedItems, ...nearbyStoreItems, ...catalogItems].slice(0, 24);
-    if (items.length === 0) {
+    if (items.length === 0 && !isStrictDescriptorSearch) {
       const details = await fetchProductDetails(productQuery, 3500);
       const relevantDetails = details && isRelevantProductCandidate(details, productQuery, productQuery)
         ? [details]

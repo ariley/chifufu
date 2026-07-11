@@ -126,6 +126,31 @@ async function assertDistinctProductRows(searchQuery) {
   }, null, 2));
 }
 
+async function assertNoGenericNorwegianCreamCheeseRows(searchQuery) {
+  const items = await postResults(searchQuery);
+  const genericRows = items.filter(item => {
+    const product = normalize([item.brand, item.description, item.detailQuery].filter(Boolean).join(' '));
+    return /\b(kroger|philadelphia)\b/.test(product)
+      || (/\bcream cheese\b/.test(product) && !/\b(norwegian|snofrisk|sno frisk|tine|brunost)\b/.test(product));
+  });
+
+  if (genericRows.length > 0) {
+    throw new Error(`${searchQuery}: generic cream cheese leaked into results: ${
+      genericRows.map(item => [item.brand, item.description].filter(Boolean).join(' ')).join(', ')
+    }`);
+  }
+
+  console.log(JSON.stringify({
+    searchQuery,
+    rows: items.length,
+    sample: items.slice(0, 4).map(item => ({
+      product: [item.brand, item.description].filter(Boolean).join(' '),
+      detailQuery: item.detailQuery,
+      source: item.source,
+    })),
+  }, null, 2));
+}
+
 await assertSuggestions('cre', ['cream cheese', 'sour cream']);
 await assertSuggestions('creem', ['cream cheese']);
 await assertSuggestions('yogh', ['yogurt', 'greek yogurt']);
@@ -139,8 +164,8 @@ console.log(JSON.stringify({
   hasImage: Boolean(barcodeProduct.imageUrl),
   hasIngredients: Boolean(barcodeProduct.ingredients),
 }, null, 2));
-await assertDistinctProductRows('Norwegian cream cheese');
-await assertDistinctProductRows('Norwegian crème cheese');
+await assertNoGenericNorwegianCreamCheeseRows('Norwegian cream cheese');
+await assertNoGenericNorwegianCreamCheeseRows('Norwegian crème cheese');
 await assertDistinctProductRows('Rye bread');
 if (LOCAL_WITHOUT_LIVE_PROVIDER) {
   console.log('Skipping live-provider product cases: local API has no Kroger credentials.');
