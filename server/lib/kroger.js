@@ -1,3 +1,5 @@
+const Fuse = require('fuse.js');
+
 // Use certification environment until production access is granted
 const KROGER_BASE = process.env.KROGER_ENV === 'production'
   ? 'https://api.kroger.com/v1'
@@ -126,7 +128,7 @@ async function fetchProductsForTerm(token, term, locationId, limit, originalQuer
   .filter(p => p.priceValue != null)
   .sort((a, b) => a.relevanceRank - b.relevanceRank || a.priceValue - b.priceValue);
 
-  return pricedProducts.filter(productMatchesQuery(term, originalQuery));
+  return rankProductMatches(pricedProducts, term, originalQuery);
 }
 
 module.exports = { findNearestStore, searchProducts };
@@ -187,6 +189,45 @@ function productMatchesQuery(query, originalQuery = query) {
       return haystackTokens.has(token);
     });
   };
+}
+
+function rankProductMatches(products, query, originalQuery = query) {
+  const candidates = products.filter(productMatchesQuery(query, originalQuery));
+  if (candidates.length < 2) return candidates;
+
+  const fuse = new Fuse(candidates, {
+    includeScore: true,
+    ignoreLocation: true,
+    ignoreFieldNorm: true,
+    threshold: 0.4,
+    minMatchCharLength: 2,
+    keys: [
+      { name: 'name', weight: 0.58 },
+      { name: 'brand', weight: 0.24 },
+      { name: 'size', weight: 0.12 },
+      { name: 'badges', weight: 0.06 },
+    ],
+  });
+  const scores = new Map(fuse.search(buildFuseProductQuery(originalQuery, query)).map(result => [result.item.id, result.score ?? 1]));
+  if (scores.size === 0) return candidates;
+
+  return candidates
+    .map((product, index) => ({ product, index, searchScore: scores.get(product.id) ?? 1 }))
+    .sort((a, b) => (
+      a.searchScore - b.searchScore
+      || a.product.relevanceRank - b.product.relevanceRank
+      || a.product.priceValue - b.product.priceValue
+      || a.index - b.index
+    ))
+    .map(entry => entry.product);
+}
+
+function buildFuseProductQuery(originalQuery, fallbackQuery) {
+  return normalizeForSearch(originalQuery || fallbackQuery)
+    .split(/[^a-z0-9]+/)
+    .filter(token => token.length > 2 && !['with', 'and', 'the', 'for'].includes(token))
+    .join(' ')
+    || normalizeForSearch(fallbackQuery);
 }
 
 function buildSearchTerms(query) {

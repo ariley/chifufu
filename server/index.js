@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const Fuse = require('fuse.js');
 const MiniSearch = require('minisearch');
 const authRoutes = require('./routes/auth');
 const { findNearestStore, searchProducts } = require('./lib/kroger');
@@ -751,21 +752,31 @@ function rankProductCandidates(searchQuery, candidates) {
   if (!Array.isArray(candidates) || candidates.length < 2) return candidates;
 
   const docs = candidates.map((product, index) => ({
-    id: String(index),
+    ...product,
+    _rankIndex: index,
     label: [product.brand, product.name].filter(Boolean).join(' '),
-    brand: product.brand || '',
-    category: product.categoryText || '',
     aliases: [product.productSize, product.labels?.join(' ')].filter(Boolean).join(' '),
-    source: product.source || '',
-    priority: index,
   }));
-  const index = createProductSearchIndex(docs);
-  const scores = new Map(index.search(productDetailQuery(searchQuery)).map(result => [Number(result.id), result.score]));
+  const fuse = new Fuse(docs, {
+    includeScore: true,
+    ignoreLocation: true,
+    ignoreFieldNorm: true,
+    threshold: 0.42,
+    minMatchCharLength: 2,
+    keys: [
+      { name: 'label', weight: 0.52 },
+      { name: 'brand', weight: 0.18 },
+      { name: 'name', weight: 0.18 },
+      { name: 'categoryText', weight: 0.07 },
+      { name: 'aliases', weight: 0.05 },
+    ],
+  });
+  const scores = new Map(fuse.search(productDetailQuery(searchQuery)).map(result => [result.item._rankIndex, result.score ?? 1]));
   if (scores.size === 0) return candidates;
 
   return candidates
-    .map((product, index) => ({ product, index, score: scores.get(index) ?? 0 }))
-    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .map((product, index) => ({ product, index, score: scores.get(index) ?? 1 }))
+    .sort((a, b) => a.score - b.score || a.index - b.index)
     .map(entry => entry.product);
 }
 
