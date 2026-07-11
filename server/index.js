@@ -12,7 +12,7 @@ app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const RESULTS_CACHE_VERSION = 'products-v9-store-aware-catalog';
+const RESULTS_CACHE_VERSION = 'products-v10-orange-juice-relevance';
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
 const PRODUCT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const SUGGESTION_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -385,6 +385,9 @@ function isRelevantProductCandidate(product, searchQuery, originalSearchQuery = 
 }
 
 function isObviousCatalogMismatch(originalQuery, identityText) {
+  if (originalQuery.includes('orange') && originalQuery.includes('juice') && !/\b(juice|oj)\b/.test(identityText)) {
+    return true;
+  }
   if (originalQuery === 'milk' && /\b(chocolate|candy|cookie|biscuit|snack|kinder|milky)\b/.test(identityText)) {
     return true;
   }
