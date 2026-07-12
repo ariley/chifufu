@@ -139,7 +139,6 @@ async function assertNoGenericNorwegianCreamCheeseRows(searchQuery) {
       genericRows.map(item => [item.brand, item.description].filter(Boolean).join(' ')).join(', ')
     }`);
   }
-
   console.log(JSON.stringify({
     searchQuery,
     rows: items.length,

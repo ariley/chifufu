@@ -4,6 +4,7 @@ const Fuse = require('fuse.js');
 const MiniSearch = require('minisearch');
 const authRoutes = require('./routes/auth');
 const { findNearestStore, searchProducts } = require('./lib/kroger');
+const { planProductQuery } = require('./lib/product-query-planner');
 
 const app = express();
 app.use(cors());
@@ -13,7 +14,7 @@ app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 3000;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-const RESULTS_CACHE_VERSION = 'products-v11-strict-origin-descriptors';
+const RESULTS_CACHE_VERSION = 'products-v13-ai-query-planner';
 const RESULTS_CACHE_TTL_MS = 15 * 60 * 1000;
 const PRODUCT_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const SUGGESTION_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -356,7 +357,7 @@ function productIdentityText(product) {
   return normalizeCachePart([product?.brand, product?.name, product?.productSize].filter(Boolean).join(' '));
 }
 
-function isRelevantProductCandidate(product, searchQuery, originalSearchQuery = searchQuery) {
+function isRelevantProductCandidate(product, searchQuery, originalSearchQuery = searchQuery, queryPlan = null) {
   const query = normalizeSearchTokens(productDetailQuery(searchQuery)).join(' ');
   const originalQuery = normalizeSearchTokens(productDetailQuery(originalSearchQuery)).join(' ');
   const rawText = normalizeCachePart(productSearchText(product));
@@ -365,6 +366,7 @@ function isRelevantProductCandidate(product, searchQuery, originalSearchQuery = 
   const identityTokens = normalizeSearchTokens(productIdentityText(product));
   if (!query || !text) return false;
   if (originalQuery.includes('with pulp') && /\b(no pulp|pulp free|sans pulpe)\b/.test(rawText)) return false;
+  if (!matchesQueryPlan(productIdentityText(product), queryPlan)) return false;
   if (isObviousCatalogMismatch(originalQuery, productIdentityText(product))) return false;
   const requiredDescriptors = getRequiredDescriptorTokens(originalQuery);
   if (requiredDescriptors.length > 0 && !requiredDescriptors.every(token => productHasDescriptor(rawText, token))) {
@@ -388,6 +390,23 @@ function isRelevantProductCandidate(product, searchQuery, originalSearchQuery = 
   if (text.includes(query) && query.includes(' ')) return true;
   if (tokens.length === 0) return true;
   return tokens.every(token => tokenMatches(textTokens, token));
+}
+
+function matchesQueryPlan(productText, queryPlan) {
+  if (!queryPlan) return true;
+  const rawText = normalizeCachePart(productText);
+  const textTokens = normalizeSearchTokens(rawText);
+  const excludedTerms = Array.isArray(queryPlan.excludedTerms) ? queryPlan.excludedTerms : [];
+  if (excludedTerms.some(term => term && rawText.includes(normalizeCachePart(term)))) return false;
+
+  const requiredTerms = (Array.isArray(queryPlan.requiredTerms) ? queryPlan.requiredTerms : [])
+    .map(normalizeCachePart)
+    .filter(term => term.length > 2 && !PRODUCT_SEARCH_MODIFIERS.has(term));
+  if (requiredTerms.length === 0) return true;
+  return requiredTerms.every(term => {
+    const termTokens = normalizeSearchTokens(term);
+    return termTokens.every(token => tokenMatches(textTokens, token));
+  });
 }
 
 function isObviousCatalogMismatch(originalQuery, identityText) {
@@ -435,7 +454,18 @@ function normalizeTags(tags) {
     .slice(0, 8);
 }
 
-function buildOpenFoodFactsTerms(searchQuery) {
+function buildOpenFoodFactsTerms(searchQuery, queryPlan = null) {
+  const plannedTerms = Array.isArray(queryPlan?.searchTerms) ? queryPlan.searchTerms : [];
+  if (plannedTerms.length > 0) {
+    return [...new Set([
+      ...plannedTerms.map(cleanText),
+      ...buildTokenOpenFoodFactsTerms(searchQuery),
+    ].filter(Boolean))].slice(0, 22);
+  }
+  return buildTokenOpenFoodFactsTerms(searchQuery);
+}
+
+function buildTokenOpenFoodFactsTerms(searchQuery) {
   const query = productDetailQuery(searchQuery);
   const normalized = normalizeForSearch(query);
   const terms = [];
@@ -534,9 +564,7 @@ const PRODUCT_SEARCH_MODIFIERS = new Set([
   'shredded',
 ]);
 
-const STRICT_DESCRIPTOR_ALIASES = {
-  norwegian: ['snofrisk', 'sno frisk', 'tine snofrisk', 'tine brunost', 'brunost'],
-};
+const STRICT_DESCRIPTOR_ALIASES = {};
 
 function getRequiredDescriptorTokens(query) {
   const tokenSet = new Set(normalizeForSearch(query).split(/[^a-z0-9]+/).filter(Boolean));
@@ -594,7 +622,6 @@ const STORE_SEARCH_PATTERNS = [
 
 const COMMON_PRODUCT_SUGGESTIONS = [
   { label: 'cream cheese', category: 'dairy cheese spread', aliases: 'soft cheese schmear' },
-  { label: 'Norwegian cream cheese', category: 'dairy cheese spread', aliases: 'snofrisk tine brunost soft cheese' },
   { label: 'sour cream', category: 'dairy cream', aliases: 'crema cultured cream' },
   { label: 'heavy cream', category: 'dairy cream', aliases: 'whipping cream heavy whipping cream' },
   { label: 'whipped cream', category: 'dairy cream dessert topping', aliases: 'whip cream' },
@@ -645,14 +672,14 @@ const COMMON_PRODUCT_SUGGESTIONS = [
   { label: 'dark chocolate', category: 'snack candy baking', aliases: 'chocolate bar bittersweet chocolate' },
 ];
 
-async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1200, allowCoreFallback = true, originalSearchQuery = searchQuery) {
+async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1200, allowCoreFallback = true, originalSearchQuery = searchQuery, queryPlan = null) {
   const cacheKey = `candidates:${normalizeCachePart(originalSearchQuery)}:${normalizeCachePart(searchQuery)}:${limit}`;
   const cached = getCachedProductCandidates(cacheKey);
   if (cached) return cached;
 
   const seen = new Set();
   const candidates = [];
-  const terms = buildOpenFoodFactsTerms(searchQuery);
+  const terms = buildOpenFoodFactsTerms(searchQuery, queryPlan);
   const perTermLimit = Math.max(limit * 4, 24);
   const deadline = Date.now() + timeoutMs;
 
@@ -664,7 +691,7 @@ async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1
       for (const product of data.products ?? []) {
         const details = mapOpenFoodFactsProduct(product, term);
         const key = normalizeCachePart(`${details.brand || ''}|${details.name}|${details.productSize || ''}`);
-        if (!isUsableProductCandidate(details) || !isRelevantProductCandidate(details, term, originalSearchQuery) || seen.has(key)) continue;
+        if (!isUsableProductCandidate(details) || !isRelevantProductCandidate(details, term, originalSearchQuery, queryPlan) || seen.has(key)) continue;
         seen.add(key);
         candidates.push(details);
         setCachedProductDetails(normalizeCachePart([details.brand, details.name].filter(Boolean).join(' ')), details);
@@ -684,9 +711,9 @@ async function searchOpenFoodFactsProducts(searchQuery, limit = 6, timeoutMs = 1
     return rankedCandidates;
   }
   if (candidates.length === 0 && allowCoreFallback) {
-    const fallbackQuery = buildOpenFoodFactsTerms(searchQuery).find(term => normalizeCachePart(term) !== normalizeCachePart(searchQuery));
+    const fallbackQuery = buildOpenFoodFactsTerms(searchQuery, queryPlan).find(term => normalizeCachePart(term) !== normalizeCachePart(searchQuery));
     if (fallbackQuery && normalizeCachePart(fallbackQuery) !== normalizeCachePart(searchQuery)) {
-      return searchOpenFoodFactsProducts(fallbackQuery, limit, Math.max(600, timeoutMs), false, originalSearchQuery);
+      return searchOpenFoodFactsProducts(fallbackQuery, limit, Math.max(600, timeoutMs), false, originalSearchQuery, queryPlan);
     }
   }
   return candidates;
@@ -850,21 +877,22 @@ async function fetchOpenFoodFactsSearch(term, limit, timeoutMs) {
   throw lastError ?? new Error('Open Food Facts search failed');
 }
 
-async function fetchProductDetails(searchQuery, timeoutMs = 1200) {
+async function fetchProductDetails(searchQuery, timeoutMs = 1200, queryPlan = null) {
   const query = productDetailQuery(searchQuery);
   const cacheKey = normalizeCachePart(query);
   const cached = getCachedProductDetails(cacheKey);
   if (cached) return cached;
 
   try {
-    const candidates = await searchOpenFoodFactsProducts(query, 3, timeoutMs);
+    const plan = queryPlan ?? await planProductQuery(query, { timeoutMs: Math.min(timeoutMs, 1800) });
+    const candidates = await searchOpenFoodFactsProducts(query, 3, timeoutMs, true, query, plan);
     const details = candidates[0];
     if (isUsableProductCandidate(details)) {
       setCachedProductDetails(cacheKey, details);
       return details;
     }
     const relaxedDetails = await fetchRelaxedProductDetails(query, timeoutMs);
-    if (relaxedDetails && isRelevantProductCandidate(relaxedDetails, query, query)) {
+    if (relaxedDetails && isRelevantProductCandidate(relaxedDetails, query, query, plan)) {
       setCachedProductDetails(cacheKey, relaxedDetails);
       return relaxedDetails;
     }
@@ -1025,14 +1053,14 @@ function buildNearbyStoreCatalogResults({ productCandidates, places, pricedItems
   return rows;
 }
 
-async function searchKrogerPricedResults({ searchQuery, lat, lng, radiusMiles = 15, limit = 12 }) {
+async function searchKrogerPricedResults({ searchQuery, lat, lng, radiusMiles = 15, limit = 12, queryPlan = null }) {
   if (!lat || !lng) return [];
   const stores = await findNearestStore(Number(lat), Number(lng), radiusMiles);
   if (!Array.isArray(stores) || stores.length === 0) return [];
 
   const rows = [];
   const storeSearches = stores.slice(0, 6).map(async (store) => {
-    const products = await searchProducts(searchQuery, store.locationId, limit);
+    const products = await searchProducts(searchQuery, store.locationId, limit, queryPlan);
     return products.slice(0, 5).map(product => {
       const distance = (Number.isFinite(store.lat) && Number.isFinite(store.lng))
         ? `${(haversine(Number(lat), Number(lng), Number(store.lat), Number(store.lng)) * 0.621).toFixed(1)} mi`
@@ -1417,20 +1445,21 @@ app.post('/api/results', async (req, res) => {
   res.set('X-Chifufu-Cache', 'MISS');
   const productQuery = productDetailQuery(searchQuery);
   const isStrictDescriptorSearch = getRequiredDescriptorTokens(productQuery).length > 0;
-  const generation = Promise.all([
-    searchKrogerPricedResults({ searchQuery: productQuery, lat, lng, limit: 10 }).catch(err => {
+  const generation = planProductQuery(productQuery).then(queryPlan => Promise.all([
+    searchKrogerPricedResults({ searchQuery: productQuery, lat, lng, limit: 10, queryPlan }).catch(err => {
       console.error('priced provider error:', err.message);
       return [];
     }),
-    searchOpenFoodFactsProducts(productQuery, 12, isStrictDescriptorSearch ? 1800 : 4500),
+    searchOpenFoodFactsProducts(productQuery, 12, isStrictDescriptorSearch ? 1800 : 4500, true, productQuery, queryPlan),
     resolvePlaces({ location, category: 'grocery', lat, lng }).catch(err => {
       console.error('nearby grocery store error:', err.message);
       return [];
     }),
   ]).then(async ([pricedItems, productCandidates, places]) => {
+    const localPlaces = filterPlacesForLocation(places, location);
     const nearbyStoreItems = buildNearbyStoreCatalogResults({
       productCandidates,
-      places: filterPlacesForLocation(places, location),
+      places: localPlaces,
       pricedItems,
       limit: 8,
     });
@@ -1439,8 +1468,8 @@ app.post('/api/results', async (req, res) => {
       .filter(item => !pricedDetailQueries.has(normalizeCachePart(item.detailQuery)));
     let items = [...pricedItems, ...nearbyStoreItems, ...catalogItems].slice(0, 24);
     if (items.length === 0 && !isStrictDescriptorSearch) {
-      const details = await fetchProductDetails(productQuery, 3500);
-      const relevantDetails = details && isRelevantProductCandidate(details, productQuery, productQuery)
+      const details = await fetchProductDetails(productQuery, 3500, queryPlan);
+      const relevantDetails = details && isRelevantProductCandidate(details, productQuery, productQuery, queryPlan)
         ? [details]
         : [];
       items = buildCatalogResults({ searchQuery, productCandidates: relevantDetails });
@@ -1449,7 +1478,7 @@ app.post('/api/results', async (req, res) => {
       setCachedResults(cacheKey, items);
     }
     return items;
-  });
+  }));
   pendingResults.set(cacheKey, generation);
   try {
     const items = await generation;

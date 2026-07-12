@@ -67,19 +67,19 @@ async function findNearestStore(lat, lng, radiusMiles = 10) {
 }
 
 // Search products at a specific store — returns array of product results
-async function searchProducts(query, locationId, limit = 20) {
+async function searchProducts(query, locationId, limit = 20, queryPlan = null) {
   const token = await getToken();
   const searchLimit = Math.max(limit, 50);
 
-  for (const term of buildSearchTerms(query)) {
-    const products = await fetchProductsForTerm(token, term, locationId, searchLimit, query);
+  for (const term of buildSearchTerms(query, queryPlan)) {
+    const products = await fetchProductsForTerm(token, term, locationId, searchLimit, query, queryPlan);
     if (products.length > 0) return products;
   }
 
   return [];
 }
 
-async function fetchProductsForTerm(token, term, locationId, limit, originalQuery = term) {
+async function fetchProductsForTerm(token, term, locationId, limit, originalQuery = term, queryPlan = null) {
   const params = new URLSearchParams({
     'filter.term': term,
     'filter.limit': String(limit),
@@ -128,12 +128,12 @@ async function fetchProductsForTerm(token, term, locationId, limit, originalQuer
   .filter(p => p.priceValue != null)
   .sort((a, b) => a.relevanceRank - b.relevanceRank || a.priceValue - b.priceValue);
 
-  return rankProductMatches(pricedProducts, term, originalQuery);
+  return rankProductMatches(pricedProducts, term, originalQuery, queryPlan);
 }
 
 module.exports = { findNearestStore, searchProducts };
 
-function productMatchesQuery(query, originalQuery = query) {
+function productMatchesQuery(query, originalQuery = query, queryPlan = null) {
   const rawTokens = normalizeForSearch(query)
     .split(/[^a-z0-9]+/)
     .filter(Boolean);
@@ -153,6 +153,7 @@ function productMatchesQuery(query, originalQuery = query) {
     if (normalizedOriginalQuery.includes('with pulp') && /\b(no pulp|pulp free|sans pulpe)\b/.test(productText)) {
       return false;
     }
+    if (!matchesQueryPlan(productText, queryPlan)) return false;
     if (requiredDescriptors.length > 0 && !requiredDescriptors.every(token => productHasDescriptor(productText, token))) {
       return false;
     }
@@ -191,8 +192,8 @@ function productMatchesQuery(query, originalQuery = query) {
   };
 }
 
-function rankProductMatches(products, query, originalQuery = query) {
-  const candidates = products.filter(productMatchesQuery(query, originalQuery));
+function rankProductMatches(products, query, originalQuery = query, queryPlan = null) {
+  const candidates = products.filter(productMatchesQuery(query, originalQuery, queryPlan));
   if (candidates.length < 2) return candidates;
 
   const fuse = new Fuse(candidates, {
@@ -208,7 +209,7 @@ function rankProductMatches(products, query, originalQuery = query) {
       { name: 'badges', weight: 0.06 },
     ],
   });
-  const scores = new Map(fuse.search(buildFuseProductQuery(originalQuery, query)).map(result => [result.item.id, result.score ?? 1]));
+  const scores = new Map(fuse.search(buildFuseProductQuery(originalQuery, query, queryPlan)).map(result => [result.item.id, result.score ?? 1]));
   if (scores.size === 0) return candidates;
 
   return candidates
@@ -222,15 +223,27 @@ function rankProductMatches(products, query, originalQuery = query) {
     .map(entry => entry.product);
 }
 
-function buildFuseProductQuery(originalQuery, fallbackQuery) {
-  return normalizeForSearch(originalQuery || fallbackQuery)
+function buildFuseProductQuery(originalQuery, fallbackQuery, queryPlan = null) {
+  return normalizeForSearch(queryPlan?.canonicalQuery || originalQuery || fallbackQuery)
     .split(/[^a-z0-9]+/)
     .filter(token => token.length > 2 && !['with', 'and', 'the', 'for'].includes(token))
     .join(' ')
     || normalizeForSearch(fallbackQuery);
 }
 
-function buildSearchTerms(query) {
+function buildSearchTerms(query, queryPlan = null) {
+  const plannedTerms = Array.isArray(queryPlan?.searchTerms) ? queryPlan.searchTerms : [];
+  if (plannedTerms.length > 0) {
+    return [...new Set([
+      ...plannedTerms.map(normalizeForSearch),
+      normalizeForSearch(query),
+      ...buildTokenSearchTerms(query),
+    ].filter(Boolean))].slice(0, 20);
+  }
+  return buildTokenSearchTerms(query);
+}
+
+function buildTokenSearchTerms(query) {
   const normalizedQuery = stripStoreSearchTerms(query);
   const tokens = normalizedQuery
     .split(/[^a-z0-9]+/)
@@ -266,6 +279,26 @@ function buildSearchTerms(query) {
   }
 
   return [...new Set(terms.filter(Boolean))].slice(0, 16);
+}
+
+function matchesQueryPlan(productText, queryPlan) {
+  if (!queryPlan) return true;
+  const text = normalizeForSearch(productText);
+  const textTokens = new Set(text.split(/[^a-z0-9]+/).filter(Boolean).map(singularizeToken));
+  const excludedTerms = Array.isArray(queryPlan.excludedTerms) ? queryPlan.excludedTerms : [];
+  if (excludedTerms.some(term => term && text.includes(normalizeForSearch(term)))) return false;
+
+  const requiredTerms = (Array.isArray(queryPlan.requiredTerms) ? queryPlan.requiredTerms : [])
+    .map(normalizeForSearch)
+    .filter(term => term.length > 2 && !GENERIC_PRODUCT_MODIFIERS.has(term));
+  if (requiredTerms.length === 0) return true;
+  return requiredTerms.every(term => {
+    const termTokens = term.split(/[^a-z0-9]+/).filter(Boolean).map(singularizeToken);
+    return termTokens.every(token => (
+      textTokens.has(token)
+      || [...textTokens].some(textToken => token.length >= 5 && (textToken.startsWith(token) || token.startsWith(textToken)))
+    ));
+  });
 }
 
 function stripStoreSearchTerms(query) {
@@ -340,9 +373,7 @@ const GENERIC_PRODUCT_MODIFIERS = new Set([
   'free',
 ]);
 
-const STRICT_DESCRIPTOR_ALIASES = {
-  norwegian: ['snofrisk', 'sno frisk', 'tine snofrisk', 'tine brunost', 'brunost'],
-};
+const STRICT_DESCRIPTOR_ALIASES = {};
 
 function getRequiredDescriptorTokens(query) {
   const tokenSet = new Set(normalizeForSearch(query).split(/[^a-z0-9]+/).filter(Boolean));
