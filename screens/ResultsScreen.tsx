@@ -282,9 +282,16 @@ export default function ResultsScreen() {
                   {[item.productSize, item.size].filter(Boolean).join(' · ')}
                 </Text>
                 {item.storeName ? (
-                  <Text style={[styles.cardStore, { color: textTer }]} numberOfLines={1}>
-                    {item.storeName}{item.rating ? ` · ${item.rating.toFixed(1)} stars` : ''}{item.storeAddress ? ` · ${item.storeAddress}` : ''}
-                  </Text>
+                  <>
+                    <Text style={[styles.cardStore, { color: textTer }]} numberOfLines={1}>
+                      {item.storeName}{item.rating ? ` · ${item.rating.toFixed(1)} stars` : ''}{item.storeAddress ? ` · ${item.storeAddress}` : ''}
+                    </Text>
+                    {item.source ? (
+                      <Text style={[styles.cardStore, { color: textTer }]} numberOfLines={1}>
+                        {item.source}
+                      </Text>
+                    ) : null}
+                  </>
                 ) : item.source ? (
                   <Text style={[styles.cardStore, { color: textTer }]} numberOfLines={1}>
                     {item.source}

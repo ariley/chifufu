@@ -1011,9 +1011,8 @@ function buildCatalogResults({ searchQuery, productCandidates }) {
     });
 }
 
-function buildNearbyStoreCatalogResults({ productCandidates, places, pricedItems, limit = 8 }) {
-  const usableProducts = (productCandidates ?? []).filter(isUsableProductCandidate).slice(0, 4);
-  if (usableProducts.length === 0 || !Array.isArray(places) || places.length === 0) return [];
+function buildNearbyStoreCatalogResults({ searchQuery, queryPlan, places, pricedItems, limit = 8 }) {
+  if (!Array.isArray(places) || places.length === 0) return [];
 
   const liveStoreNames = new Set((pricedItems ?? [])
     .map(item => normalizeCachePart(item.name))
@@ -1022,30 +1021,30 @@ function buildNearbyStoreCatalogResults({ productCandidates, places, pricedItems
     .filter(place => place?.name && !liveStoreNames.has(normalizeCachePart(place.name)))
     .slice(0, limit);
 
+  const productName = cleanText(queryPlan?.canonicalQuery) || productDetailQuery(searchQuery);
   const rows = [];
   groceryPlaces.forEach((place, placeIndex) => {
-    const product = usableProducts[placeIndex % usableProducts.length];
-    const detailQuery = [product.brand, product.name].filter(Boolean).join(' ') || product.query;
+    const detailQuery = productName || searchQuery;
     rows.push({
       id: `nearby-store-${placeIndex}-${normalizeCachePart(place.name).replace(/[^a-z0-9]+/g, '-')}-${normalizeCachePart(detailQuery).replace(/[^a-z0-9]+/g, '-')}`,
       name: place.name,
-      description: product.name,
-      brand: product.brand || null,
-      productSize: product.productSize || null,
+      description: detailQuery,
+      brand: null,
+      productSize: null,
       price: null,
       priceValue: null,
       distance: place.distMi ? `${place.distMi} mi` : '',
-      badges: ['nearby store', 'product info'],
+      badges: ['nearby store', 'availability unverified'],
       address: place.address || '',
-      imageUrl: product.imageUrl ?? null,
-      ingredients: product.ingredients ?? null,
-      calories: product.calories ?? null,
-      nutrition: product.nutrition ?? null,
+      imageUrl: null,
+      ingredients: null,
+      calories: null,
+      nutrition: null,
       detailQuery,
       lat: place.lat,
       lng: place.lng,
       rating: place.rating,
-      source: 'Nearby store + Open Food Facts',
+      source: 'Nearby grocery store; product availability not verified',
       isLivePrice: false,
     });
   });
@@ -1458,7 +1457,8 @@ app.post('/api/results', async (req, res) => {
   ]).then(async ([pricedItems, productCandidates, places]) => {
     const localPlaces = filterPlacesForLocation(places, location);
     const nearbyStoreItems = buildNearbyStoreCatalogResults({
-      productCandidates,
+      searchQuery,
+      queryPlan,
       places: localPlaces,
       pricedItems,
       limit: 8,
