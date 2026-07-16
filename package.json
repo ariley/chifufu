@@ -1,6 +1,6 @@
 {
   "name": "cheap-food",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "main": "index.ts",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
